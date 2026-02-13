@@ -137,7 +137,7 @@ describe("dispatchReplyFromConfig", () => {
     );
   });
 
-  it("provides onToolResult in DM sessions", async () => {
+  it("provides onToolResult in webchat DM sessions", async () => {
     mocks.tryFastAbortFromMessage.mockResolvedValue({
       handled: false,
       aborted: false,
@@ -146,7 +146,8 @@ describe("dispatchReplyFromConfig", () => {
     const cfg = {} as OpenClawConfig;
     const dispatcher = createDispatcher();
     const ctx = buildTestCtx({
-      Provider: "telegram",
+      Provider: "webchat",
+      Surface: "webchat",
       ChatType: "direct",
     });
 
@@ -157,6 +158,33 @@ describe("dispatchReplyFromConfig", () => {
     ) => {
       expect(opts?.onToolResult).toBeDefined();
       expect(typeof opts?.onToolResult).toBe("function");
+      return { text: "hi" } satisfies ReplyPayload;
+    };
+
+    await dispatchReplyFromConfig({ ctx, cfg, dispatcher, replyResolver });
+    expect(dispatcher.sendFinalReply).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not provide onToolResult in external DM sessions", async () => {
+    mocks.tryFastAbortFromMessage.mockResolvedValue({
+      handled: false,
+      aborted: false,
+    });
+    mocks.routeReply.mockClear();
+    const cfg = {} as OpenClawConfig;
+    const dispatcher = createDispatcher();
+    const ctx = buildTestCtx({
+      Provider: "telegram",
+      Surface: "telegram",
+      ChatType: "direct",
+    });
+
+    const replyResolver = async (
+      _ctx: MsgContext,
+      opts: GetReplyOptions | undefined,
+      _cfg: OpenClawConfig,
+    ) => {
+      expect(opts?.onToolResult).toBeUndefined();
       return { text: "hi" } satisfies ReplyPayload;
     };
 
@@ -189,7 +217,7 @@ describe("dispatchReplyFromConfig", () => {
     expect(dispatcher.sendFinalReply).toHaveBeenCalledTimes(1);
   });
 
-  it("sends tool results via dispatcher in DM sessions", async () => {
+  it("sends tool results via dispatcher in webchat DM sessions", async () => {
     mocks.tryFastAbortFromMessage.mockResolvedValue({
       handled: false,
       aborted: false,
@@ -197,7 +225,8 @@ describe("dispatchReplyFromConfig", () => {
     const cfg = {} as OpenClawConfig;
     const dispatcher = createDispatcher();
     const ctx = buildTestCtx({
-      Provider: "telegram",
+      Provider: "webchat",
+      Surface: "webchat",
       ChatType: "direct",
     });
 

@@ -13,6 +13,7 @@ import {
 } from "../../logging/diagnostic.js";
 import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
 import { maybeApplyTtsToPayload, normalizeTtsAutoMode, resolveTtsConfig } from "../../tts/tts.js";
+import { isInternalMessageChannel } from "../../utils/message-channel.js";
 import { getReplyFromConfig } from "../reply.js";
 import { formatAbortReplyText, tryFastAbortFromMessage } from "./abort.js";
 import { shouldSkipDuplicateInbound } from "./inbound-dedupe.js";
@@ -292,7 +293,12 @@ export async function dispatchReplyFromConfig(params: {
     let accumulatedBlockText = "";
     let blockCount = 0;
 
-    const shouldSendToolSummaries = ctx.ChatType !== "group" && ctx.CommandSource !== "native";
+    const replyChannel = shouldRouteToOriginating ? originatingChannel : currentSurface;
+    const shouldSendToolSummaries =
+      ctx.ChatType !== "group" &&
+      ctx.CommandSource !== "native" &&
+      // Tool summaries are for internal debugging and should not be sent to external recipients.
+      isInternalMessageChannel(replyChannel);
 
     const replyResult = await (params.replyResolver ?? getReplyFromConfig)(
       ctx,

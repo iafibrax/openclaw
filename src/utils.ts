@@ -137,7 +137,12 @@ export function toWhatsappJid(number: string): string {
     return withoutPrefix;
   }
   const e164 = normalizeE164(withoutPrefix);
-  const digits = e164.replace(/\D/g, "");
+  let digits = e164.replace(/\D/g, "");
+  // WhatsApp commonly stores Mexico mobile users under +521XXXXXXXXXX JIDs.
+  // Accept +52XXXXXXXXXX input and normalize to the mobile JID form.
+  if (/^52\d{10}$/.test(digits)) {
+    digits = `521${digits.slice(2)}`;
+  }
   return `${digits}@s.whatsapp.net`;
 }
 

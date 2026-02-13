@@ -71,6 +71,11 @@ describe("normalizeE164 & toWhatsappJid", () => {
     expect(toWhatsappJid("whatsapp:+555 123 4567")).toBe("5551234567@s.whatsapp.net");
   });
 
+  it("normalizes Mexico +52 mobile numbers to +521 JIDs", () => {
+    expect(toWhatsappJid("+529984149274")).toBe("5219984149274@s.whatsapp.net");
+    expect(toWhatsappJid("+5219984149274")).toBe("5219984149274@s.whatsapp.net");
+  });
+
   it("preserves existing JIDs", () => {
     expect(toWhatsappJid("123456789-987654321@g.us")).toBe("123456789-987654321@g.us");
     expect(toWhatsappJid("whatsapp:123456789-987654321@g.us")).toBe("123456789-987654321@g.us");
