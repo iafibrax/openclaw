@@ -1,0 +1,32 @@
+{
+  "name": "openclaw",
+  "description": "OpenClaw gateway deployment for Heroku (WebSocket/API mode).",
+  "repository": "https://github.com/openclaw/openclaw",
+  "stack": "heroku-24",
+  "buildpacks": [
+    {
+      "url": "heroku/nodejs"
+    }
+  ],
+  "env": {
+    "SETUP_PASSWORD": {
+      "description": "Password used by /setup to initialize the instance."
+    },
+    "OPENCLAW_GATEWAY_TOKEN": {
+      "description": "Gateway auth token required by clients (recommended for non-loopback bind).",
+      "generator": "secret"
+    },
+    "OPENCLAW_STATE_DIR": {
+      "description": "Runtime state directory (ephemeral on Heroku dynos).",
+      "value": "/tmp/.openclaw"
+    },
+    "OPENCLAW_WORKSPACE_DIR": {
+      "description": "Workspace directory used by agents (ephemeral on Heroku dynos).",
+      "value": "/tmp/workspace"
+    },
+    "NPM_CONFIG_PRODUCTION": {
+      "description": "Install dev dependencies required for the Heroku build step.",
+      "value": "false"
+    }
+  }
+}
