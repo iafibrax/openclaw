@@ -25,6 +25,7 @@ export async function runSessionsSendA2AFlow(params: {
   requesterChannel?: GatewayMessageChannel;
   roundOneReply?: string;
   waitRunId?: string;
+  forceFallbackOnAnnounceSkip?: boolean;
 }) {
   const runContextId = params.waitRunId ?? "unknown";
   try {
@@ -111,13 +112,21 @@ export async function runSessionsSendA2AFlow(params: {
       timeoutMs: params.announceTimeoutMs,
       lane: AGENT_LANE_NESTED,
     });
-    if (announceTarget && announceReply && announceReply.trim() && !isAnnounceSkip(announceReply)) {
+    const fallbackReply =
+      primaryReply && primaryReply.trim() && !isReplySkip(primaryReply) ? primaryReply.trim() : "";
+    const announceText =
+      announceReply && announceReply.trim() && !isAnnounceSkip(announceReply)
+        ? announceReply.trim()
+        : params.forceFallbackOnAnnounceSkip && fallbackReply
+          ? fallbackReply
+          : "";
+    if (announceTarget && announceText) {
       try {
         await callGateway({
           method: "send",
           params: {
             to: announceTarget.to,
-            message: announceReply.trim(),
+            message: announceText,
             channel: announceTarget.channel,
             accountId: announceTarget.accountId,
             idempotencyKey: crypto.randomUUID(),

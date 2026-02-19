@@ -265,7 +265,11 @@ export function createSessionsSendTool(opts?: {
       const requesterChannel = opts?.agentChannel;
       const maxPingPongTurns = resolvePingPongTurns(cfg);
       const delivery = { status: "pending", mode: "announce" as const };
-      const startA2AFlow = (roundOneReply?: string, waitRunId?: string) => {
+      const startA2AFlow = (
+        roundOneReply?: string,
+        waitRunId?: string,
+        extra?: { forceFallbackOnAnnounceSkip?: boolean },
+      ) => {
         void runSessionsSendA2AFlow({
           targetSessionKey: resolvedKey,
           displayKey,
@@ -276,6 +280,7 @@ export function createSessionsSendTool(opts?: {
           requesterChannel,
           roundOneReply,
           waitRunId,
+          forceFallbackOnAnnounceSkip: extra?.forceFallbackOnAnnounceSkip,
         });
       };
 
@@ -344,6 +349,11 @@ export function createSessionsSendTool(opts?: {
       } catch (err) {
         const messageText =
           err instanceof Error ? err.message : typeof err === "string" ? err : "error";
+        // If wait timed out at transport level, keep an async announce flow alive
+        // so late child replies can still be surfaced back to the requester.
+        if (messageText.includes("gateway timeout")) {
+          startA2AFlow(undefined, runId, { forceFallbackOnAnnounceSkip: true });
+        }
         return jsonResult({
           runId,
           status: messageText.includes("gateway timeout") ? "timeout" : "error",
@@ -353,6 +363,9 @@ export function createSessionsSendTool(opts?: {
       }
 
       if (waitStatus === "timeout") {
+        // Child run may still complete after this timeout. Start async announce
+        // so the eventual result can still be delivered.
+        startA2AFlow(undefined, runId, { forceFallbackOnAnnounceSkip: true });
         return jsonResult({
           runId,
           status: "timeout",

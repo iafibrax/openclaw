@@ -1,0 +1,39 @@
+{
+  "id": "zoom",
+  "name": "Zoom",
+  "description": "Zoom meetings agent tool (status, personal link, list, get, create).",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "accountId": {
+        "type": "string",
+        "description": "Zoom Server-to-Server OAuth account ID."
+      },
+      "clientId": {
+        "type": "string",
+        "description": "Zoom Server-to-Server OAuth client ID."
+      },
+      "clientSecret": {
+        "type": "string",
+        "description": "Zoom Server-to-Server OAuth client secret."
+      },
+      "secretToken": {
+        "type": "string",
+        "description": "Zoom webhook secret token (used to verify event notifications)."
+      },
+      "userId": {
+        "type": "string",
+        "description": "Zoom host user ID or email used for list/create actions."
+      },
+      "defaultTimezone": {
+        "type": "string",
+        "description": "Default IANA timezone for created meetings."
+      },
+      "defaultPassword": {
+        "type": "string",
+        "description": "Default passcode to apply when creating meetings."
+      }
+    }
+  }
+}

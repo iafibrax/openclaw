@@ -509,6 +509,190 @@ describe("sessions tools", () => {
     expect(sendCallCount).toBe(0);
   });
 
+  it("sessions_send starts async announce flow when wait times out", async () => {
+    callGatewayMock.mockReset();
+    const calls: Array<{ method?: string; params?: unknown }> = [];
+    let agentCallCount = 0;
+    let run1WaitCount = 0;
+    let lastWaitedRunId: string | undefined;
+    const replyByRunId = new Map<string, string>();
+    let sendPayload: { to?: string; channel?: string; message?: string } | undefined;
+
+    callGatewayMock.mockImplementation(async (opts: unknown) => {
+      const request = opts as { method?: string; params?: unknown };
+      calls.push(request);
+
+      if (request.method === "agent") {
+        agentCallCount += 1;
+        const runId = `run-${agentCallCount}`;
+        const params = request.params as
+          | { message?: string; extraSystemPrompt?: string }
+          | undefined;
+        let reply = "REPLY_SKIP";
+        if (params?.message === "wait-timeout") {
+          reply = "late report ready";
+        } else if (params?.extraSystemPrompt?.includes("Agent-to-agent announce step")) {
+          reply = "announce message";
+        }
+        replyByRunId.set(runId, reply);
+        return { runId, status: "accepted" };
+      }
+
+      if (request.method === "agent.wait") {
+        const params = request.params as { runId?: string } | undefined;
+        const runId = params?.runId ?? "";
+        lastWaitedRunId = runId;
+        if (runId === "run-1") {
+          run1WaitCount += 1;
+          return { runId, status: run1WaitCount === 1 ? "timeout" : "ok" };
+        }
+        return { runId, status: "ok" };
+      }
+
+      if (request.method === "chat.history") {
+        const text = (lastWaitedRunId && replyByRunId.get(lastWaitedRunId)) ?? "";
+        return {
+          messages: [
+            {
+              role: "assistant",
+              content: [{ type: "text", text }],
+              timestamp: 20,
+            },
+          ],
+        };
+      }
+
+      if (request.method === "send") {
+        const params = request.params as
+          | { to?: string; channel?: string; message?: string }
+          | undefined;
+        sendPayload = {
+          to: params?.to,
+          channel: params?.channel,
+          message: params?.message,
+        };
+        return { messageId: "m-timeout-announce" };
+      }
+
+      return {};
+    });
+
+    const tool = createOpenClawTools().find((candidate) => candidate.name === "sessions_send");
+    expect(tool).toBeDefined();
+    if (!tool) {
+      throw new Error("missing sessions_send tool");
+    }
+
+    const result = await tool.execute("call-timeout", {
+      sessionKey: "discord:group:target",
+      message: "wait-timeout",
+      timeoutSeconds: 1,
+    });
+    expect(result.details).toMatchObject({
+      status: "timeout",
+      runId: "run-1",
+    });
+
+    await waitForCalls(() => calls.filter((call) => call.method === "send").length, 1);
+    expect(sendPayload).toMatchObject({
+      to: "channel:target",
+      channel: "discord",
+      message: "announce message",
+    });
+  });
+
+  it("sessions_send timeout announce falls back to round-one reply when announce skips", async () => {
+    callGatewayMock.mockReset();
+    const calls: Array<{ method?: string; params?: unknown }> = [];
+    let agentCallCount = 0;
+    let run1WaitCount = 0;
+    let lastWaitedRunId: string | undefined;
+    const replyByRunId = new Map<string, string>();
+    let sendPayload: { to?: string; channel?: string; message?: string } | undefined;
+
+    callGatewayMock.mockImplementation(async (opts: unknown) => {
+      const request = opts as { method?: string; params?: unknown };
+      calls.push(request);
+
+      if (request.method === "agent") {
+        agentCallCount += 1;
+        const runId = `run-${agentCallCount}`;
+        const params = request.params as
+          | { message?: string; extraSystemPrompt?: string }
+          | undefined;
+        let reply = "REPLY_SKIP";
+        if (params?.message === "wait-timeout") {
+          reply = "late report ready";
+        } else if (params?.extraSystemPrompt?.includes("Agent-to-agent announce step")) {
+          reply = "ANNOUNCE_SKIP";
+        }
+        replyByRunId.set(runId, reply);
+        return { runId, status: "accepted" };
+      }
+
+      if (request.method === "agent.wait") {
+        const params = request.params as { runId?: string } | undefined;
+        const runId = params?.runId ?? "";
+        lastWaitedRunId = runId;
+        if (runId === "run-1") {
+          run1WaitCount += 1;
+          return { runId, status: run1WaitCount === 1 ? "timeout" : "ok" };
+        }
+        return { runId, status: "ok" };
+      }
+
+      if (request.method === "chat.history") {
+        const text = (lastWaitedRunId && replyByRunId.get(lastWaitedRunId)) ?? "";
+        return {
+          messages: [
+            {
+              role: "assistant",
+              content: [{ type: "text", text }],
+              timestamp: 20,
+            },
+          ],
+        };
+      }
+
+      if (request.method === "send") {
+        const params = request.params as
+          | { to?: string; channel?: string; message?: string }
+          | undefined;
+        sendPayload = {
+          to: params?.to,
+          channel: params?.channel,
+          message: params?.message,
+        };
+        return { messageId: "m-timeout-fallback" };
+      }
+
+      return {};
+    });
+
+    const tool = createOpenClawTools().find((candidate) => candidate.name === "sessions_send");
+    expect(tool).toBeDefined();
+    if (!tool) {
+      throw new Error("missing sessions_send tool");
+    }
+
+    const result = await tool.execute("call-timeout-fallback", {
+      sessionKey: "discord:group:target",
+      message: "wait-timeout",
+      timeoutSeconds: 1,
+    });
+    expect(result.details).toMatchObject({
+      status: "timeout",
+      runId: "run-1",
+    });
+
+    await waitForCalls(() => calls.filter((call) => call.method === "send").length, 1);
+    expect(sendPayload).toMatchObject({
+      to: "channel:target",
+      channel: "discord",
+      message: "late report ready",
+    });
+  });
+
   it("sessions_send resolves sessionId inputs", async () => {
     callGatewayMock.mockReset();
     const sessionId = "sess-send";

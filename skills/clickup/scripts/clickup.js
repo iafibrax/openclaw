@@ -15,7 +15,9 @@ function usage() {
       "  node clickup.js find-list --workspace <id> --name <listName>",
       "  node clickup.js count-list --list <id> [--include-closed true|false] [--max-pages <n>]",
       "  node clickup.js count-list-by-name --workspace <id> --name <listName> [--match exact|contains] [--include-closed true|false]",
+      "  node clickup.js tasks-by-scope --workspace <id> --scope <name> [--match exact|contains] [--include-closed true|false] [--max-pages <n>] [--limit <n>]",
       "  node clickup.js corporate-summary --workspace <id> [--scope <name>] [--match exact|contains] [--include-closed true|false]",
+      '  node clickup.js departments-report --workspace <id> --departments "<Label=Scope|AltScope,...>" [--match exact|contains] [--recent-hours <n>] [--stale-days <n>] [--top <n>] [--max-pages <n>]',
       "",
       "Env:",
       "  CLICKUP_API_TOKEN (required)",
@@ -88,6 +90,13 @@ function parsePositiveInt(value, fallback) {
   return parsed;
 }
 
+function parseOptionalPositiveInt(value) {
+  if (!value) {
+    return null;
+  }
+  return parsePositiveInt(value, 1);
+}
+
 function normalizeName(value) {
   return value.trim().toLowerCase();
 }
@@ -114,6 +123,19 @@ function parseMatchMode(value, fallback = "exact") {
 function namesMatch(source, target, mode) {
   const normalizedSource = normalizeText(source);
   const normalizedTarget = normalizeText(target);
+  if (!normalizedSource || !normalizedTarget) {
+    return false;
+  }
+  if (mode !== "contains") {
+    return normalizedSource === normalizedTarget;
+  }
+
+  // Avoid accidental matches for very short targets (e.g. "IT") inside other words.
+  if (normalizedTarget.length <= 3) {
+    const tokens = normalizedSource.split(/[^a-z0-9]+/g).filter(Boolean);
+    return tokens.includes(normalizedTarget);
+  }
+
   return mode === "contains"
     ? normalizedSource.includes(normalizedTarget)
     : normalizedSource === normalizedTarget;
@@ -306,11 +328,26 @@ class ClickUpClient {
     };
   }
 
-  async getWorkspaceTasksPage(workspaceId, { includeClosed, page }) {
+  async getWorkspaceTasksPage(workspaceId, { includeClosed, page, query }) {
+    const queryParams = new URLSearchParams();
+    queryParams.set("archived", "false");
+    queryParams.set("include_closed", includeClosed ? "true" : "false");
+    queryParams.set("page", String(page));
+    if (query && typeof query === "object") {
+      for (const [key, value] of Object.entries(query)) {
+        if (value === null || value === undefined) {
+          continue;
+        }
+        const normalized = String(value).trim();
+        if (!normalized) {
+          continue;
+        }
+        queryParams.set(key, normalized);
+      }
+    }
+
     const payload = await this.request(
-      `/team/${encodeURIComponent(workspaceId)}/task?archived=false&include_closed=${
-        includeClosed ? "true" : "false"
-      }&page=${page}`,
+      `/team/${encodeURIComponent(workspaceId)}/task?${queryParams.toString()}`,
     );
     return {
       tasks: Array.isArray(payload?.tasks) ? payload.tasks : [],
@@ -403,6 +440,10 @@ async function fetchTasksInList(client, list, { includeClosed, maxPages }) {
         folderName: list.folderName,
         assignees,
         dueDate: task?.due_date ? Number(task.due_date) : null,
+        dateCreated: task?.date_created ? Number(task.date_created) : null,
+        dateUpdated: task?.date_updated ? Number(task.date_updated) : null,
+        dateDone: task?.date_done ? Number(task.date_done) : null,
+        dateClosed: task?.date_closed ? Number(task.date_closed) : null,
       });
     }
     if (result.lastPage || result.tasks.length === 0) {
@@ -412,13 +453,13 @@ async function fetchTasksInList(client, list, { includeClosed, maxPages }) {
   return tasks;
 }
 
-async function fetchWorkspaceTasks(client, workspaceId, { includeClosed, maxPages }) {
+async function fetchWorkspaceTasks(client, workspaceId, { includeClosed, maxPages, query }) {
   const tasks = [];
   let pagesFetched = 0;
   let reachedLastPage = false;
 
   for (let page = 0; page < maxPages; page += 1) {
-    const result = await client.getWorkspaceTasksPage(workspaceId, { includeClosed, page });
+    const result = await client.getWorkspaceTasksPage(workspaceId, { includeClosed, page, query });
     pagesFetched += 1;
     for (const task of result.tasks) {
       const assignees = Array.isArray(task?.assignees)
@@ -436,6 +477,10 @@ async function fetchWorkspaceTasks(client, workspaceId, { includeClosed, maxPage
         folderName: String(task?.folder?.name ?? ""),
         assignees,
         dueDate: task?.due_date ? Number(task.due_date) : null,
+        dateCreated: task?.date_created ? Number(task.date_created) : null,
+        dateUpdated: task?.date_updated ? Number(task.date_updated) : null,
+        dateDone: task?.date_done ? Number(task.date_done) : null,
+        dateClosed: task?.date_closed ? Number(task.date_closed) : null,
       });
     }
     if (result.lastPage || result.tasks.length === 0) {
@@ -487,6 +532,129 @@ function buildCorporateSummary({ scope, lists, tasks }) {
 
 function printJson(payload) {
   console.log(JSON.stringify(payload, null, 2));
+}
+
+function toIsoTimestamp(value) {
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+  try {
+    return new Date(value).toISOString();
+  } catch {
+    return null;
+  }
+}
+
+function parseDepartmentSpecs(value) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return [];
+  }
+  return raw
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => {
+      const [left, right] = item.split("=").map((part) => (part ? part.trim() : ""));
+      const label = right ? left : item;
+      const scopeSpec = right ? right : item;
+      const scopes = scopeSpec
+        .split("|")
+        .map((scope) => scope.trim())
+        .filter(Boolean);
+      return { label, scopes: scopes.length ? scopes : [label] };
+    })
+    .filter((item) => item.label && Array.isArray(item.scopes) && item.scopes.length > 0);
+}
+
+function dedupeTasks(tasks) {
+  const map = new Map();
+  for (const task of tasks) {
+    const id = String(task?.id ?? "").trim();
+    if (!id) {
+      continue;
+    }
+    if (!map.has(id)) {
+      map.set(id, task);
+    }
+  }
+  return Array.from(map.values());
+}
+
+function pickTop(items, { limit, sortKey, direction }) {
+  const dir = direction === "asc" ? 1 : -1;
+  return items
+    .slice()
+    .sort((a, b) => {
+      const av = Number(a?.[sortKey] ?? 0);
+      const bv = Number(b?.[sortKey] ?? 0);
+      if (av === bv) {
+        return 0;
+      }
+      return av > bv ? dir : -dir;
+    })
+    .slice(0, limit);
+}
+
+function buildDepartmentsReportText(report) {
+  const lines = [];
+  lines.push(`ClickUp por departamentos (corte: ${report.generatedAt})`);
+  lines.push(
+    `Fuentes: tareas actualizadas en las ultimas ${report.recentHours}h + vencidas + con vencimiento en las proximas 24h.`,
+  );
+  lines.push("");
+
+  for (const dept of report.departments) {
+    lines.push(`${dept.label}`);
+    lines.push(`A) Logros 24h: ${dept.doneRecent.count} tareas hechas.`);
+    if (dept.doneRecent.top.length) {
+      lines.push(
+        `   Top: ${dept.doneRecent.top.map((t) => `${t.name} [${t.status}]`).join(" | ")}`,
+      );
+    }
+
+    lines.push(
+      `B) Bloqueos/atrasos: bloqueadas ${dept.blocked.count} | vencidas ${dept.overdue.count} | sin update >=${report.staleDays}d ${dept.stale.count}.`,
+    );
+    if (dept.blocked.top.length) {
+      lines.push(
+        `   Bloqueos: ${dept.blocked.top.map((t) => `${t.name} [${t.status}]`).join(" | ")}`,
+      );
+    }
+    if (dept.overdue.top.length) {
+      lines.push(
+        `   Vencidas: ${dept.overdue.top
+          .map((t) => `${t.name} (due ${t.dueDateIso || "sin fecha"})`)
+          .join(" | ")}`,
+      );
+    }
+    if (dept.stale.top.length) {
+      lines.push(
+        `   Sin update: ${dept.stale.top
+          .map((t) => `${t.name} (upd ${t.dateUpdatedIso || "N/A"})`)
+          .join(" | ")}`,
+      );
+    }
+
+    lines.push(
+      `C) Hoy: vencen <=24h ${dept.dueSoon.count} | en curso (upd <=${report.recentHours}h) ${dept.activeRecent.count}.`,
+    );
+    if (dept.dueSoon.top.length) {
+      lines.push(
+        `   Vencen <=24h: ${dept.dueSoon.top
+          .map((t) => `${t.name} (due ${t.dueDateIso || "sin fecha"})`)
+          .join(" | ")}`,
+      );
+    }
+    if (dept.activeRecent.top.length) {
+      lines.push(
+        `   En curso: ${dept.activeRecent.top.map((t) => `${t.name} [${t.status}]`).join(" | ")}`,
+      );
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n").trim();
 }
 
 async function run() {
@@ -713,6 +881,280 @@ async function run() {
       usedFallbackWorkspace: scopedTasks.length === 0,
       summary,
       text: buildCorporateSummaryText(summary),
+    });
+    return;
+  }
+
+  if (command === "tasks-by-scope") {
+    const workspaceId =
+      flagValue(flags, "workspace") || process.env.CLICKUP_WORKSPACE_ID?.trim() || "";
+    const scopeName = flagValue(flags, "scope");
+    const matchMode = parseMatchMode(flagValue(flags, "match"), "contains");
+    const includeClosed = parseBoolean(flagValue(flags, "include-closed"), false);
+    const maxPages = parsePositiveInt(flagValue(flags, "max-pages"), DEFAULT_MAX_PAGES);
+    const limit = parseOptionalPositiveInt(flagValue(flags, "limit"));
+
+    if (!workspaceId) {
+      throw new Error("Missing workspace id. Use --workspace <id> or set CLICKUP_WORKSPACE_ID.");
+    }
+    if (!scopeName) {
+      throw new Error('Missing scope name. Use --scope "<name>".');
+    }
+
+    const workspaceTasks = await fetchWorkspaceTasks(client, workspaceId, {
+      includeClosed,
+      maxPages,
+    });
+
+    const scopedTasks = workspaceTasks.tasks.filter(
+      (task) =>
+        namesMatch(task.listName, scopeName, matchMode) ||
+        namesMatch(task.spaceName, scopeName, matchMode) ||
+        namesMatch(task.folderName, scopeName, matchMode),
+    );
+
+    let matchedLists = [];
+    if (scopedTasks.length > 0) {
+      const listMap = new Map();
+      for (const task of scopedTasks) {
+        const key = `${task.listId}:${task.listName}`;
+        if (!listMap.has(key)) {
+          listMap.set(key, {
+            listId: task.listId,
+            listName: task.listName,
+            spaceName: task.spaceName,
+            folderName: task.folderName,
+          });
+        }
+      }
+      matchedLists = Array.from(listMap.values());
+    } else {
+      const lists = await collectListsByWorkspace(client, workspaceId);
+      matchedLists = lists
+        .filter(
+          (list) =>
+            namesMatch(list.listName, scopeName, matchMode) ||
+            namesMatch(list.spaceName, scopeName, matchMode) ||
+            namesMatch(list.folderName || "", scopeName, matchMode),
+        )
+        .map((list) => ({
+          listId: list.listId,
+          listName: list.listName,
+          spaceName: list.spaceName,
+          folderName: list.folderName,
+        }))
+        .slice(0, 50);
+    }
+
+    const returnedTasks = limit ? scopedTasks.slice(0, limit) : scopedTasks;
+    const truncated = limit ? scopedTasks.length > limit : false;
+
+    printJson({
+      ok: true,
+      workspaceId,
+      scopeName,
+      matchMode,
+      includeClosed,
+      maxPages,
+      pagesFetched: workspaceTasks.pagesFetched,
+      reachedLastPage: workspaceTasks.reachedLastPage,
+      matchedTasks: scopedTasks.length,
+      returnedTasks: returnedTasks.length,
+      truncated,
+      matchedListsCount: matchedLists.length,
+      matchedLists,
+      tasks: returnedTasks.map((task) => ({
+        id: task.id,
+        name: task.name,
+        status: task.status,
+        listId: task.listId,
+        listName: task.listName,
+        spaceName: task.spaceName,
+        folderName: task.folderName,
+        assignees: task.assignees,
+        dueDate: task.dueDate,
+        dueDateIso: task.dueDate ? toIsoTimestamp(task.dueDate) : null,
+      })),
+      hints:
+        scopedTasks.length === 0
+          ? [
+              "No matching tasks were found for this scope with the current filters.",
+              "Try `find-list` to confirm the exact list name, or rerun with `--include-closed true`.",
+            ]
+          : [],
+    });
+    return;
+  }
+
+  if (command === "departments-report") {
+    const workspaceId =
+      flagValue(flags, "workspace") || process.env.CLICKUP_WORKSPACE_ID?.trim() || "";
+    const departmentsRaw = flagValue(flags, "departments") || flagValue(flags, "scopes");
+    const matchMode = parseMatchMode(flagValue(flags, "match"), "contains");
+    const maxPages = parsePositiveInt(flagValue(flags, "max-pages"), 20);
+    const recentHours = parsePositiveInt(flagValue(flags, "recent-hours"), 24);
+    const staleDays = parsePositiveInt(flagValue(flags, "stale-days"), 7);
+    const top = parsePositiveInt(flagValue(flags, "top"), 5);
+
+    if (!workspaceId) {
+      throw new Error("Missing workspace id. Use --workspace <id> or set CLICKUP_WORKSPACE_ID.");
+    }
+    if (!departmentsRaw) {
+      throw new Error('Missing departments. Use --departments "<Label=Scope|AltScope,...>".');
+    }
+
+    const departments = parseDepartmentSpecs(departmentsRaw);
+    if (departments.length === 0) {
+      throw new Error('No valid departments parsed. Format: "Label=Scope|AltScope,Otro=Scope".');
+    }
+
+    const nowMs = Date.now();
+    const recentUpdatedGt = nowMs - recentHours * 60 * 60 * 1000;
+    const staleUpdatedLt = nowMs - staleDays * 24 * 60 * 60 * 1000;
+    const dueSoonLt = nowMs + 24 * 60 * 60 * 1000;
+
+    const [recentAll, overdueOpen, dueSoonOpen] = await Promise.all([
+      fetchWorkspaceTasks(client, workspaceId, {
+        includeClosed: true,
+        maxPages,
+        query: { date_updated_gt: String(recentUpdatedGt) },
+      }),
+      fetchWorkspaceTasks(client, workspaceId, {
+        includeClosed: false,
+        maxPages,
+        query: { due_date_lt: String(nowMs) },
+      }),
+      fetchWorkspaceTasks(client, workspaceId, {
+        includeClosed: false,
+        maxPages,
+        query: { due_date_gt: String(nowMs), due_date_lt: String(dueSoonLt) },
+      }),
+    ]);
+
+    const union = dedupeTasks([...recentAll.tasks, ...overdueOpen.tasks, ...dueSoonOpen.tasks]);
+
+    const deptReports = [];
+    for (const dept of departments) {
+      const matchesScope = (task) =>
+        dept.scopes.some(
+          (scope) =>
+            namesMatch(task.listName, scope, matchMode) ||
+            namesMatch(task.spaceName, scope, matchMode) ||
+            namesMatch(task.folderName || "", scope, matchMode),
+        );
+
+      const deptUnion = union.filter(matchesScope);
+      const deptRecent = recentAll.tasks.filter(matchesScope);
+      const deptOverdue = overdueOpen.tasks.filter(matchesScope);
+      const deptDueSoon = dueSoonOpen.tasks.filter(matchesScope);
+
+      const doneRecent = deptRecent.filter((task) => classifyStatus(task.status) === "done");
+      const activeRecent = deptRecent.filter((task) => {
+        const group = classifyStatus(task.status);
+        return group !== "done" && group !== "blocked";
+      });
+      const blocked = deptUnion.filter((task) => classifyStatus(task.status) === "blocked");
+      const stale = deptUnion.filter(
+        (task) =>
+          classifyStatus(task.status) !== "done" &&
+          Number.isFinite(task.dateUpdated) &&
+          task.dateUpdated < staleUpdatedLt,
+      );
+
+      const mapTask = (task) => ({
+        id: task.id,
+        name: task.name,
+        status: task.status,
+        listName: task.listName,
+        dueDateIso: task.dueDate ? toIsoTimestamp(task.dueDate) : null,
+        dateUpdatedIso: task.dateUpdated ? toIsoTimestamp(task.dateUpdated) : null,
+      });
+
+      deptReports.push({
+        label: dept.label,
+        scopes: dept.scopes,
+        counts: {
+          recent: deptRecent.length,
+          overdue: deptOverdue.length,
+          dueSoon: deptDueSoon.length,
+          union: deptUnion.length,
+        },
+        doneRecent: {
+          count: doneRecent.length,
+          top: pickTop(doneRecent, {
+            limit: top,
+            sortKey: "dateUpdated",
+            direction: "desc",
+          }).map(mapTask),
+        },
+        activeRecent: {
+          count: activeRecent.length,
+          top: pickTop(activeRecent, {
+            limit: top,
+            sortKey: "dateUpdated",
+            direction: "desc",
+          }).map(mapTask),
+        },
+        blocked: {
+          count: blocked.length,
+          top: pickTop(blocked, {
+            limit: top,
+            sortKey: "dateUpdated",
+            direction: "desc",
+          }).map(mapTask),
+        },
+        overdue: {
+          count: deptOverdue.length,
+          top: pickTop(deptOverdue, {
+            limit: top,
+            sortKey: "dueDate",
+            direction: "asc",
+          }).map(mapTask),
+        },
+        dueSoon: {
+          count: deptDueSoon.length,
+          top: pickTop(deptDueSoon, {
+            limit: top,
+            sortKey: "dueDate",
+            direction: "asc",
+          }).map(mapTask),
+        },
+        stale: {
+          count: stale.length,
+          top: pickTop(stale, {
+            limit: top,
+            sortKey: "dateUpdated",
+            direction: "asc",
+          }).map(mapTask),
+        },
+      });
+    }
+
+    const generatedAt = new Date().toISOString();
+    const report = {
+      ok: true,
+      workspaceId,
+      matchMode,
+      recentHours,
+      staleDays,
+      top,
+      generatedAt,
+      queries: {
+        recentUpdatedGt,
+        overdueDueDateLt: nowMs,
+        dueSoon: { dueDateGt: nowMs, dueDateLt: dueSoonLt },
+        pages: {
+          recent: recentAll.pagesFetched,
+          overdue: overdueOpen.pagesFetched,
+          dueSoon: dueSoonOpen.pagesFetched,
+        },
+      },
+      departments: deptReports,
+    };
+
+    printJson({
+      ...report,
+      text: buildDepartmentsReportText(report),
     });
     return;
   }
