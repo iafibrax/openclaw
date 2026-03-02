@@ -4,6 +4,8 @@ const DEFAULT_BASE_URL = "https://api.clickup.com/api/v2";
 const DEFAULT_LIST_NAME = "Referidos";
 const DEFAULT_MAX_PAGES = 200;
 const DEFAULT_CORP_SCOPE_NAME = "Direccion General";
+const DEFAULT_REQUEST_TIMEOUT_MS = 20000;
+const DEFAULT_LIST_FETCH_CONCURRENCY = 4;
 
 function usage() {
   console.log(
@@ -12,9 +14,16 @@ function usage() {
       "  node clickup.js whoami",
       "  node clickup.js workspaces",
       "  node clickup.js spaces --workspace <id>",
+      "  node clickup.js projects --workspace <id> (alias of spaces)",
+      '  node clickup.js list-space --workspace <id> --space "IT" [--match exact|contains]',
+      '  node clickup.js space-summary --workspace <id> --space "IT" [--match exact|contains] [--include-closed true|false] [--max-pages <n>] [--top <n>]',
+      '  node clickup.js space-details --workspace <id> --space "IT" (...) (alias of space-summary)',
+      '  node clickup.js space-members --workspace <id> --space "Direccion General" [--match exact|contains]',
       "  node clickup.js find-list --workspace <id> --name <listName>",
       "  node clickup.js count-list --list <id> [--include-closed true|false] [--max-pages <n>]",
       "  node clickup.js count-list-by-name --workspace <id> --name <listName> [--match exact|contains] [--include-closed true|false]",
+      '  node clickup.js create-task --workspace <id> --list <id> --name "<task>" [--description "<text>"] [--assignees "<idOrName,idOrName>"] [--start-date "<iso|ms>"] [--due-date "<iso|ms>"] [--priority urgent|high|normal|low] [--notify-all true|false] [--notify-space-members true|false] [--dry-run true|false]',
+      '  node clickup.js create-ceo-task --name "<task>" [--description "<text>"] [--assignees "<idOrName,idOrName>"] --due-date "<iso|ms>" --priority urgent|high|normal|low [--dry-run true|false]',
       "  node clickup.js tasks-by-scope --workspace <id> --scope <name> [--match exact|contains] [--include-closed true|false] [--max-pages <n>] [--limit <n>]",
       "  node clickup.js corporate-summary --workspace <id> [--scope <name>] [--match exact|contains] [--include-closed true|false]",
       '  node clickup.js departments-report --workspace <id> --departments "<Label=Scope|AltScope,...>" [--match exact|contains] [--recent-hours <n>] [--stale-days <n>] [--top <n>] [--max-pages <n>]',
@@ -22,6 +31,7 @@ function usage() {
       "Env:",
       "  CLICKUP_API_TOKEN (required)",
       "  CLICKUP_BASE_URL (optional, default https://api.clickup.com/api/v2)",
+      `  CLICKUP_TIMEOUT_MS (optional, default ${DEFAULT_REQUEST_TIMEOUT_MS})`,
       "  CLICKUP_WORKSPACE_ID (optional default for --workspace)",
       '  CLICKUP_DEFAULT_LIST_NAME (optional default for --name, default "Referidos")',
       '  CLICKUP_CORP_SCOPE_NAME (optional default for --scope, default "Direccion General")',
@@ -95,6 +105,65 @@ function parseOptionalPositiveInt(value) {
     return null;
   }
   return parsePositiveInt(value, 1);
+}
+
+function parseOptionalDateMs(value, flagName) {
+  const input = String(value || "").trim();
+  if (!input) {
+    return null;
+  }
+
+  if (/^\d+$/.test(input)) {
+    const parsed = Number.parseInt(input, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      throw new Error(`Invalid ${flagName} value "${value}". Use an ISO date or epoch ms.`);
+    }
+    return parsed;
+  }
+
+  const parsed = Date.parse(input);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`Invalid ${flagName} value "${value}". Use an ISO date or epoch ms.`);
+  }
+  return parsed;
+}
+
+function parseCsvItems(value) {
+  const input = String(value || "").trim();
+  if (!input) {
+    return [];
+  }
+  return input
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parsePriority(value) {
+  const input = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (!input) {
+    return null;
+  }
+  const mapping = {
+    urgent: 1,
+    alta: 1,
+    high: 2,
+    normal: 3,
+    media: 3,
+    low: 4,
+    baja: 4,
+    1: 1,
+    2: 2,
+    3: 3,
+    4: 4,
+  };
+  const priority = mapping[input];
+  if (!priority) {
+    throw new Error(`Invalid priority value "${value}". Use urgent|high|normal|low (or 1..4).`);
+  }
+  return priority;
 }
 
 function normalizeName(value) {
@@ -249,19 +318,42 @@ class ClickUpClient {
   constructor({ token, baseUrl }) {
     this.token = token;
     this.baseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+    const parsedTimeoutMs = Number.parseInt(process.env.CLICKUP_TIMEOUT_MS || "", 10);
+    this.timeoutMs =
+      Number.isFinite(parsedTimeoutMs) && parsedTimeoutMs > 0
+        ? parsedTimeoutMs
+        : DEFAULT_REQUEST_TIMEOUT_MS;
   }
 
-  async request(path) {
+  async request(path, { method = "GET", body = undefined } = {}) {
     const normalizedPath = path.startsWith("/") ? path.slice(1) : path;
     const url = new URL(normalizedPath, `${this.baseUrl}/`);
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        Authorization: this.token,
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-    });
+    const headers = {
+      Authorization: this.token,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    };
+    const requestOptions = {
+      method,
+      headers,
+      signal: AbortSignal.timeout(this.timeoutMs),
+    };
+    if (body !== undefined) {
+      requestOptions.body = JSON.stringify(body);
+    }
+
+    let response;
+    try {
+      response = await fetch(url, requestOptions);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        (error.name === "TimeoutError" || error.name === "AbortError")
+      ) {
+        throw new Error(`ClickUp API timeout after ${this.timeoutMs}ms ${url.pathname}`);
+      }
+      throw error;
+    }
 
     const text = await response.text();
     let payload = null;
@@ -316,6 +408,10 @@ class ClickUpClient {
     return Array.isArray(payload?.lists) ? payload.lists : [];
   }
 
+  async getSpace(spaceId) {
+    return this.request(`/space/${encodeURIComponent(spaceId)}`);
+  }
+
   async getListTasksPage(listId, { includeClosed, page }) {
     const payload = await this.request(
       `/list/${encodeURIComponent(listId)}/task?archived=false&include_closed=${
@@ -353,6 +449,20 @@ class ClickUpClient {
       tasks: Array.isArray(payload?.tasks) ? payload.tasks : [],
       lastPage: payload?.last_page === true,
     };
+  }
+
+  async createTask(listId, body) {
+    return this.request(`/list/${encodeURIComponent(listId)}/task`, {
+      method: "POST",
+      body,
+    });
+  }
+
+  async createTaskComment(taskId, body) {
+    return this.request(`/task/${encodeURIComponent(taskId)}/comment`, {
+      method: "POST",
+      body,
+    });
   }
 }
 
@@ -422,8 +532,11 @@ async function countTasksInList(client, listId, { includeClosed, maxPages }) {
 
 async function fetchTasksInList(client, list, { includeClosed, maxPages }) {
   const tasks = [];
+  let pagesFetched = 0;
+  let reachedLastPage = false;
   for (let page = 0; page < maxPages; page += 1) {
     const result = await client.getListTasksPage(list.listId, { includeClosed, page });
+    pagesFetched += 1;
     for (const task of result.tasks) {
       const assignees = Array.isArray(task?.assignees)
         ? task.assignees
@@ -447,10 +560,11 @@ async function fetchTasksInList(client, list, { includeClosed, maxPages }) {
       });
     }
     if (result.lastPage || result.tasks.length === 0) {
+      reachedLastPage = true;
       break;
     }
   }
-  return tasks;
+  return { tasks, pagesFetched, reachedLastPage };
 }
 
 async function fetchWorkspaceTasks(client, workspaceId, { includeClosed, maxPages, query }) {
@@ -490,6 +604,293 @@ async function fetchWorkspaceTasks(client, workspaceId, { includeClosed, maxPage
   }
 
   return { tasks, pagesFetched, reachedLastPage };
+}
+
+async function mapWithConcurrency(items, concurrency, mapper) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return [];
+  }
+  const normalizedConcurrency = Math.max(1, Math.min(Number(concurrency) || 1, items.length));
+  const results = new Array(items.length);
+  let cursor = 0;
+
+  async function worker() {
+    while (true) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= items.length) {
+        break;
+      }
+      results[index] = await mapper(items[index], index);
+    }
+  }
+
+  await Promise.all(Array.from({ length: normalizedConcurrency }, () => worker()));
+  return results;
+}
+
+async function resolveSpaceInWorkspace(client, workspaceId, spaceRef, matchMode = "exact") {
+  const reference = String(spaceRef || "").trim();
+  if (!reference) {
+    throw new Error('Missing space selector. Use --space "<nameOrId>".');
+  }
+
+  const spaces = await client.getSpaces(workspaceId);
+  let matches = [];
+  if (/^\d+$/.test(reference)) {
+    matches = spaces.filter((space) => String(space?.id ?? "") === reference);
+  }
+  if (matches.length === 0) {
+    matches = spaces.filter((space) => namesMatch(String(space?.name ?? ""), reference, matchMode));
+  }
+
+  if (matches.length === 0) {
+    throw new Error(`Space "${reference}" not found in workspace ${workspaceId}.`);
+  }
+  if (matches.length > 1) {
+    throw new Error(
+      `Multiple spaces matched "${reference}". Use a more specific selector. Matches: ${matches
+        .map((space) => `${space?.name ?? "-"} [${space?.id ?? "-"}]`)
+        .join(", ")}`,
+    );
+  }
+
+  const selected = matches[0];
+  const selectedId = String(selected?.id ?? "").trim();
+  if (!selectedId) {
+    throw new Error(`Matched space "${reference}" has no id.`);
+  }
+
+  return {
+    id: selectedId,
+    name: String(selected?.name ?? ""),
+    private: selected?.private ?? null,
+  };
+}
+
+async function collectListsBySpace(client, workspaceId, { spaceRef, matchMode }) {
+  const space = await resolveSpaceInWorkspace(client, workspaceId, spaceRef, matchMode);
+  const lists = [];
+
+  const folderlessLists = await client.getSpaceLists(space.id);
+  for (const list of folderlessLists) {
+    lists.push({
+      listId: String(list?.id ?? ""),
+      listName: String(list?.name ?? ""),
+      spaceId: space.id,
+      spaceName: space.name,
+      folderId: null,
+      folderName: null,
+    });
+  }
+
+  const folders = await client.getFolders(space.id);
+  for (const folder of folders) {
+    const folderId = String(folder?.id ?? "");
+    if (!folderId) {
+      continue;
+    }
+    const folderLists = await client.getFolderLists(folderId);
+    for (const list of folderLists) {
+      lists.push({
+        listId: String(list?.id ?? ""),
+        listName: String(list?.name ?? ""),
+        spaceId: space.id,
+        spaceName: space.name,
+        folderId,
+        folderName: String(folder?.name ?? ""),
+      });
+    }
+  }
+
+  return {
+    space,
+    lists: lists.filter((item) => item.listId && item.listName),
+  };
+}
+
+async function fetchTasksByLists(client, lists, { includeClosed, maxPages, concurrency }) {
+  const perList = await mapWithConcurrency(lists, concurrency, async (list) => ({
+    list,
+    ...(await fetchTasksInList(client, list, { includeClosed, maxPages })),
+  }));
+
+  let pagesFetched = 0;
+  let reachedLastPage = true;
+  const merged = [];
+
+  for (const item of perList) {
+    pagesFetched += Number(item?.pagesFetched ?? 0);
+    reachedLastPage = reachedLastPage && Boolean(item?.reachedLastPage);
+    if (Array.isArray(item?.tasks)) {
+      merged.push(...item.tasks);
+    }
+  }
+
+  return {
+    tasks: dedupeTasks(merged),
+    pagesFetched,
+    reachedLastPage,
+    listsScanned: perList.length,
+  };
+}
+
+function buildScopeSummary({ scope, lists, tasks, top }) {
+  const grouped = {
+    done: [],
+    review: [],
+    in_progress: [],
+    blocked: [],
+    todo: [],
+    other: [],
+  };
+  const assigneesMap = new Map();
+  const listsMap = new Map();
+
+  for (const list of lists) {
+    if (!list?.listId) {
+      continue;
+    }
+    listsMap.set(list.listId, {
+      listId: list.listId,
+      listName: list.listName,
+      total: 0,
+    });
+  }
+
+  for (const task of tasks) {
+    const group = classifyStatus(task.status);
+    grouped[group].push(task);
+
+    const existingList = listsMap.get(task.listId) || {
+      listId: task.listId,
+      listName: task.listName,
+      total: 0,
+    };
+    existingList.total += 1;
+    listsMap.set(task.listId, existingList);
+
+    const taskAssignees =
+      Array.isArray(task.assignees) && task.assignees.length > 0 ? task.assignees : ["Sin asignar"];
+    for (const assignee of taskAssignees) {
+      const key = String(assignee || "").trim() || "Sin asignar";
+      const existing = assigneesMap.get(key) || {
+        person: key,
+        total: 0,
+        byGroup: {
+          done: 0,
+          review: 0,
+          inProgress: 0,
+          blocked: 0,
+          todo: 0,
+          other: 0,
+        },
+      };
+      existing.total += 1;
+      if (group === "done") {
+        existing.byGroup.done += 1;
+      } else if (group === "review") {
+        existing.byGroup.review += 1;
+      } else if (group === "in_progress") {
+        existing.byGroup.inProgress += 1;
+      } else if (group === "blocked") {
+        existing.byGroup.blocked += 1;
+      } else if (group === "todo") {
+        existing.byGroup.todo += 1;
+      } else {
+        existing.byGroup.other += 1;
+      }
+      assigneesMap.set(key, existing);
+    }
+  }
+
+  const nowMs = Date.now();
+  const dueSoonLt = nowMs + 24 * 60 * 60 * 1000;
+  const overdue = tasks.filter(
+    (task) =>
+      Number.isFinite(task.dueDate) &&
+      task.dueDate < nowMs &&
+      classifyStatus(task.status) !== "done",
+  );
+  const dueSoon = tasks.filter(
+    (task) =>
+      Number.isFinite(task.dueDate) &&
+      task.dueDate >= nowMs &&
+      task.dueDate <= dueSoonLt &&
+      classifyStatus(task.status) !== "done",
+  );
+
+  return {
+    scope,
+    listsMatched: lists.length,
+    listNames: lists.map((item) => item.listName),
+    totalTasks: tasks.length,
+    byGroup: {
+      done: grouped.done.length,
+      review: grouped.review.length,
+      inProgress: grouped.in_progress.length,
+      blocked: grouped.blocked.length,
+      todo: grouped.todo.length,
+      other: grouped.other.length,
+    },
+    byAssignee: Array.from(assigneesMap.values())
+      .sort((a, b) => b.total - a.total)
+      .slice(0, top),
+    byList: Array.from(listsMap.values())
+      .sort((a, b) => b.total - a.total)
+      .slice(0, top),
+    top: {
+      done: pickTopTasks(grouped.done, top),
+      review: pickTopTasks(grouped.review, top),
+      inProgress: pickTopTasks(grouped.in_progress, top),
+      blocked: pickTopTasks(grouped.blocked, top),
+      overdue: pickTop(overdue, {
+        limit: top,
+        sortKey: "dueDate",
+        direction: "asc",
+      }).map((task) => ({
+        id: task.id,
+        name: task.name,
+        status: task.status,
+        listName: task.listName,
+        dueDate: task.dueDate,
+      })),
+      dueSoon: pickTop(dueSoon, {
+        limit: top,
+        sortKey: "dueDate",
+        direction: "asc",
+      }).map((task) => ({
+        id: task.id,
+        name: task.name,
+        status: task.status,
+        listName: task.listName,
+        dueDate: task.dueDate,
+      })),
+    },
+  };
+}
+
+function buildScopeSummaryText(summary) {
+  const lines = [];
+  lines.push(`ClickUp - ${summary.scope}`);
+  lines.push(`- Tareas analizadas: ${summary.totalTasks} en ${summary.listsMatched} listas.`);
+  lines.push(
+    `- Completadas: ${summary.byGroup.done} | Revision: ${summary.byGroup.review} | En curso: ${summary.byGroup.inProgress} | Bloqueadas: ${summary.byGroup.blocked}.`,
+  );
+  lines.push(`- Pendientes/otras: ${summary.byGroup.todo + summary.byGroup.other}.`);
+
+  if (summary.byAssignee.length > 0) {
+    lines.push(
+      `- Carga por persona: ${summary.byAssignee
+        .map((entry) => `${entry.person} (${entry.total})`)
+        .join(" | ")}.`,
+    );
+  }
+
+  lines.push(
+    `- Riesgo: vencidas ${summary.top.overdue.length} | vencen <=24h ${summary.top.dueSoon.length} | bloqueadas ${summary.top.blocked.length}.`,
+  );
+  return lines.join("\n");
 }
 
 function buildCorporateSummary({ scope, lists, tasks }) {
@@ -657,6 +1058,400 @@ function buildDepartmentsReportText(report) {
   return lines.join("\n").trim();
 }
 
+function extractMembersFromWorkspace(workspace) {
+  const rawMembers = Array.isArray(workspace?.members) ? workspace.members : [];
+  return rawMembers
+    .map((member) => {
+      const user = member?.user ?? member;
+      const id = user?.id ?? member?.id;
+      if (id === undefined || id === null) {
+        return null;
+      }
+      const idString = String(id).trim();
+      if (!idString) {
+        return null;
+      }
+      return {
+        id: idString,
+        username: String(user?.username ?? member?.username ?? "").trim(),
+        email: String(user?.email ?? member?.email ?? "").trim(),
+      };
+    })
+    .filter(Boolean);
+}
+
+function extractMembersFromSpace(spacePayload) {
+  const rawMembers = Array.isArray(spacePayload?.members) ? spacePayload.members : [];
+  return rawMembers
+    .map((member) => {
+      const user = member?.user ?? member;
+      const id = user?.id ?? member?.id;
+      if (id === undefined || id === null) {
+        return null;
+      }
+      const idString = String(id).trim();
+      if (!idString) {
+        return null;
+      }
+      return {
+        id: idString,
+        username: String(user?.username ?? member?.username ?? "").trim(),
+        email: String(user?.email ?? member?.email ?? "").trim(),
+      };
+    })
+    .filter(Boolean);
+}
+
+function dedupeMembers(members) {
+  const map = new Map();
+  for (const member of members) {
+    const id = String(member?.id ?? "").trim();
+    if (!id || map.has(id)) {
+      continue;
+    }
+    map.set(id, member);
+  }
+  return Array.from(map.values());
+}
+
+function resolveMemberIdsFromRefs(memberRefs, members) {
+  if (!Array.isArray(memberRefs) || memberRefs.length === 0) {
+    return [];
+  }
+
+  const resolvedIds = [];
+  const unresolved = [];
+  const ambiguous = [];
+
+  for (const refRaw of memberRefs) {
+    const ref = String(refRaw || "").trim();
+    if (!ref) {
+      continue;
+    }
+
+    if (/^\d+$/.test(ref)) {
+      resolvedIds.push(ref);
+      continue;
+    }
+
+    const normalizedRef = normalizeText(ref);
+    const exactMatches = members.filter((member) => {
+      const username = normalizeText(member.username || "");
+      const email = normalizeText(member.email || "");
+      return username === normalizedRef || email === normalizedRef;
+    });
+    if (exactMatches.length === 1) {
+      resolvedIds.push(exactMatches[0].id);
+      continue;
+    }
+    if (exactMatches.length > 1) {
+      ambiguous.push({ ref, candidates: exactMatches.slice(0, 5) });
+      continue;
+    }
+
+    const containsMatches = members.filter((member) => {
+      const username = normalizeText(member.username || "");
+      const email = normalizeText(member.email || "");
+      return username.includes(normalizedRef) || email.includes(normalizedRef);
+    });
+    if (containsMatches.length === 1) {
+      resolvedIds.push(containsMatches[0].id);
+      continue;
+    }
+    if (containsMatches.length > 1) {
+      ambiguous.push({ ref, candidates: containsMatches.slice(0, 5) });
+      continue;
+    }
+
+    unresolved.push(ref);
+  }
+
+  if (unresolved.length || ambiguous.length) {
+    const messages = [];
+    if (unresolved.length) {
+      messages.push(`Unresolved assignees: ${unresolved.join(", ")}`);
+    }
+    if (ambiguous.length) {
+      messages.push(
+        `Ambiguous assignees: ${ambiguous
+          .map(
+            (item) =>
+              `${item.ref} -> ${item.candidates
+                .map((candidate) => candidate.username || candidate.email || candidate.id)
+                .join(" / ")}`,
+          )
+          .join("; ")}`,
+      );
+    }
+    throw new Error(`${messages.join(". ")}. Use numeric IDs or a more specific name.`);
+  }
+
+  return Array.from(new Set(resolvedIds));
+}
+
+async function resolveTargetList({
+  client,
+  workspaceId,
+  listId,
+  listName,
+  spaceName,
+  folderName,
+  matchMode,
+}) {
+  if (listId) {
+    const lists = await collectListsByWorkspace(client, workspaceId);
+    const exact = lists.find((list) => String(list.listId) === String(listId));
+    if (exact) {
+      return exact;
+    }
+    return {
+      listId: String(listId),
+      listName: String(listName || ""),
+      spaceId: null,
+      spaceName: String(spaceName || ""),
+      folderId: null,
+      folderName: String(folderName || ""),
+    };
+  }
+
+  if (!listName) {
+    throw new Error("Missing list target. Use --list <id> or --list-name <name>.");
+  }
+
+  const lists = await collectListsByWorkspace(client, workspaceId);
+  let matches = lists.filter((list) => namesMatch(list.listName, listName, matchMode));
+
+  if (spaceName) {
+    matches = matches.filter((list) => namesMatch(list.spaceName, spaceName, matchMode));
+  }
+  if (folderName) {
+    matches = matches.filter((list) => namesMatch(list.folderName || "", folderName, matchMode));
+  }
+
+  if (matches.length === 0) {
+    throw new Error(
+      `No list match for list="${listName}" space="${spaceName || "-"}" folder="${
+        folderName || "-"
+      }".`,
+    );
+  }
+  if (matches.length > 1) {
+    throw new Error(
+      `Multiple lists matched. Be more specific with --space/--folder or pass --list <id>. Matches: ${matches
+        .slice(0, 10)
+        .map(
+          (item) =>
+            `${item.listName} (${item.spaceName}${item.folderName ? ` / ${item.folderName}` : ""}) [${item.listId}]`,
+        )
+        .join("; ")}`,
+    );
+  }
+  return matches[0];
+}
+
+function buildCreateTaskText({
+  task,
+  targetList,
+  assigneeIds,
+  priority,
+  startDateMs,
+  dueDateMs,
+  notifiedMembers,
+  failedNotifications,
+}) {
+  const lines = [];
+  lines.push(`Tarea creada: ${task.name} (${task.id}).`);
+  if (task.url) {
+    lines.push(`Link: ${task.url}`);
+  }
+  lines.push(
+    `Destino: ${targetList.spaceName || "N/A"} > ${targetList.folderName || "Sin carpeta"} > ${
+      targetList.listName || targetList.listId
+    }.`,
+  );
+  if (assigneeIds.length) {
+    lines.push(`Responsables: ${assigneeIds.join(", ")}.`);
+  }
+  if (startDateMs) {
+    lines.push(`Inicio: ${new Date(startDateMs).toISOString()}.`);
+  }
+  if (dueDateMs) {
+    lines.push(`Limite: ${new Date(dueDateMs).toISOString()}.`);
+  }
+  if (priority) {
+    lines.push(`Prioridad: ${priority}.`);
+  }
+  if (notifiedMembers > 0 || failedNotifications > 0) {
+    lines.push(
+      `Notificaciones: enviadas ${notifiedMembers}${
+        failedNotifications ? `, fallidas ${failedNotifications}` : ""
+      }.`,
+    );
+  }
+  return lines.join("\n");
+}
+
+async function createTaskFlow({ client, flags, workspaceIdDefault, forceCeoTarget = false }) {
+  const workspaceId = flagValue(flags, "workspace") || workspaceIdDefault || "";
+  if (!workspaceId) {
+    throw new Error("Missing workspace id. Use --workspace <id> or set CLICKUP_WORKSPACE_ID.");
+  }
+
+  const matchMode = parseMatchMode(flagValue(flags, "match"), "exact");
+  const taskName = flagValue(flags, "name");
+  if (!taskName) {
+    throw new Error('Missing task name. Use --name "<task>".');
+  }
+  const description = flagValue(flags, "description");
+
+  const listId = forceCeoTarget ? "" : flagValue(flags, "list");
+  const listName = forceCeoTarget
+    ? "List"
+    : flagValue(flags, "list-name") ||
+      flagValue(flags, "name-list") ||
+      process.env.CLICKUP_DEFAULT_LIST_NAME?.trim() ||
+      DEFAULT_LIST_NAME;
+  const spaceName = forceCeoTarget ? "Direccion General" : flagValue(flags, "space");
+  const folderName = forceCeoTarget ? "CEO" : flagValue(flags, "folder");
+
+  const startDateMs = parseOptionalDateMs(flagValue(flags, "start-date"), "--start-date");
+  const dueDateMs = parseOptionalDateMs(flagValue(flags, "due-date"), "--due-date");
+  const priority = parsePriority(flagValue(flags, "priority"));
+  const notifyAll = parseBoolean(flagValue(flags, "notify-all"), false);
+  const notifySpaceMembers = parseBoolean(flagValue(flags, "notify-space-members"), false);
+  const dryRun = parseBoolean(flagValue(flags, "dry-run"), false);
+  const notifyText =
+    flagValue(flags, "notify-text") || "Nueva tarea creada en Direccion General > CEO > List.";
+
+  const targetList = await resolveTargetList({
+    client,
+    workspaceId,
+    listId,
+    listName,
+    spaceName,
+    folderName,
+    matchMode,
+  });
+
+  const workspace = (await client.getWorkspaces()).find(
+    (candidate) => String(candidate?.id ?? "") === String(workspaceId),
+  );
+  const workspaceMembers = dedupeMembers(extractMembersFromWorkspace(workspace));
+  const assigneeRefs = parseCsvItems(flagValue(flags, "assignees"));
+  const assigneeIds = resolveMemberIdsFromRefs(assigneeRefs, workspaceMembers);
+
+  const payload = {
+    name: taskName,
+    ...(description ? { description } : {}),
+    ...(assigneeIds.length
+      ? {
+          assignees: assigneeIds.map((id) => (/^\d+$/.test(id) ? Number(id) : id)),
+        }
+      : {}),
+    ...(priority ? { priority } : {}),
+    ...(startDateMs ? { start_date: startDateMs, start_date_time: true } : {}),
+    ...(dueDateMs ? { due_date: dueDateMs, due_date_time: true } : {}),
+    notify_all: notifyAll,
+  };
+
+  if (dryRun) {
+    return {
+      ok: true,
+      dryRun: true,
+      workspaceId,
+      targetList,
+      payload,
+      assigneeIds,
+      priority,
+      startDateMs,
+      dueDateMs,
+      notifications: {
+        requested: notifySpaceMembers,
+      },
+      text: [
+        `Dry run: tarea lista para crear en ${targetList.spaceName || "N/A"} > ${
+          targetList.folderName || "Sin carpeta"
+        } > ${targetList.listName || targetList.listId}.`,
+        `Nombre: ${taskName}.`,
+        dueDateMs ? `Limite: ${new Date(dueDateMs).toISOString()}.` : null,
+        priority ? `Prioridad: ${priority}.` : null,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    };
+  }
+
+  const created = await client.createTask(targetList.listId, payload);
+  const taskId = String(created?.id ?? "").trim();
+  if (!taskId) {
+    throw new Error("ClickUp returned no task id after create.");
+  }
+
+  const notificationErrors = [];
+  let notifiedMembers = 0;
+  let spaceMembers = [];
+  if (notifySpaceMembers) {
+    if (!targetList.spaceId) {
+      throw new Error(
+        "notify-space-members requested, but target list has no space id. Use a resolvable list target.",
+      );
+    }
+    const spacePayload = await client.getSpace(targetList.spaceId);
+    spaceMembers = dedupeMembers(extractMembersFromSpace(spacePayload));
+    for (const member of spaceMembers) {
+      try {
+        await client.createTaskComment(taskId, {
+          comment_text: notifyText,
+          assignee: /^\d+$/.test(member.id) ? Number(member.id) : member.id,
+          notify_all: false,
+        });
+        notifiedMembers += 1;
+      } catch (error) {
+        notificationErrors.push({
+          memberId: member.id,
+          memberName: member.username || member.email || member.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
+  const task = {
+    id: taskId,
+    name: String(created?.name ?? taskName),
+    url: String(created?.url ?? ""),
+    status: String(created?.status?.status ?? "unknown"),
+  };
+
+  return {
+    ok: true,
+    workspaceId,
+    targetList,
+    task,
+    assigneeIds,
+    priority,
+    startDateMs,
+    dueDateMs,
+    notifications: {
+      requested: notifySpaceMembers,
+      totalMembers: spaceMembers.length,
+      delivered: notifiedMembers,
+      failed: notificationErrors.length,
+      errors: notificationErrors,
+    },
+    text: buildCreateTaskText({
+      task,
+      targetList,
+      assigneeIds,
+      priority,
+      startDateMs,
+      dueDateMs,
+      notifiedMembers,
+      failedNotifications: notificationErrors.length,
+    }),
+  };
+}
+
 async function run() {
   const baseUrl = process.env.CLICKUP_BASE_URL?.trim() || DEFAULT_BASE_URL;
   const { positionals, flags } = parseArgs(process.argv.slice(2));
@@ -701,7 +1496,7 @@ async function run() {
     return;
   }
 
-  if (command === "spaces") {
+  if (command === "spaces" || command === "projects") {
     const workspaceId =
       flagValue(flags, "workspace") || process.env.CLICKUP_WORKSPACE_ID?.trim() || "";
     if (!workspaceId) {
@@ -711,11 +1506,152 @@ async function run() {
     printJson({
       ok: true,
       workspaceId,
+      commandAlias: command,
       count: spaces.length,
       spaces: spaces.map((space) => ({
         id: space?.id ?? null,
         name: space?.name ?? null,
         private: space?.private ?? null,
+      })),
+    });
+    return;
+  }
+
+  if (command === "space-members") {
+    const workspaceId =
+      flagValue(flags, "workspace") || process.env.CLICKUP_WORKSPACE_ID?.trim() || "";
+    const spaceRef = flagValue(flags, "space");
+    const matchMode = parseMatchMode(flagValue(flags, "match"), "exact");
+
+    if (!workspaceId) {
+      throw new Error("Missing workspace id. Use --workspace <id> or set CLICKUP_WORKSPACE_ID.");
+    }
+    if (!spaceRef) {
+      throw new Error('Missing space name. Use --space "<name>".');
+    }
+
+    const selected = await resolveSpaceInWorkspace(client, workspaceId, spaceRef, matchMode);
+    const spacePayload = await client.getSpace(selected.id);
+    const members = dedupeMembers(extractMembersFromSpace(spacePayload));
+    printJson({
+      ok: true,
+      workspaceId,
+      space: {
+        id: selected.id,
+        name: selected.name,
+      },
+      count: members.length,
+      members,
+    });
+    return;
+  }
+
+  if (command === "list-space") {
+    const workspaceId =
+      flagValue(flags, "workspace") || process.env.CLICKUP_WORKSPACE_ID?.trim() || "";
+    const spaceRef = flagValue(flags, "space") || flagValue(flags, "name");
+    const matchMode = parseMatchMode(flagValue(flags, "match"), "exact");
+
+    if (!workspaceId) {
+      throw new Error("Missing workspace id. Use --workspace <id> or set CLICKUP_WORKSPACE_ID.");
+    }
+    if (!spaceRef) {
+      throw new Error('Missing space name/id. Use --space "<nameOrId>".');
+    }
+
+    const { space, lists } = await collectListsBySpace(client, workspaceId, {
+      spaceRef,
+      matchMode,
+    });
+    printJson({
+      ok: true,
+      workspaceId,
+      space,
+      listsCount: lists.length,
+      lists: lists.map((list) => ({
+        listId: list.listId,
+        listName: list.listName,
+        folderId: list.folderId,
+        folderName: list.folderName,
+      })),
+    });
+    return;
+  }
+
+  if (command === "space-summary" || command === "space-details") {
+    const workspaceId =
+      flagValue(flags, "workspace") || process.env.CLICKUP_WORKSPACE_ID?.trim() || "";
+    const spaceRef = flagValue(flags, "space") || flagValue(flags, "name");
+    const matchMode = parseMatchMode(flagValue(flags, "match"), "exact");
+    const includeClosed = parseBoolean(flagValue(flags, "include-closed"), false);
+    const maxPages = parsePositiveInt(flagValue(flags, "max-pages"), 20);
+    const top = parsePositiveInt(flagValue(flags, "top"), 10);
+    const concurrency = parsePositiveInt(
+      flagValue(flags, "concurrency"),
+      DEFAULT_LIST_FETCH_CONCURRENCY,
+    );
+    const limit = parseOptionalPositiveInt(flagValue(flags, "limit"));
+
+    if (!workspaceId) {
+      throw new Error("Missing workspace id. Use --workspace <id> or set CLICKUP_WORKSPACE_ID.");
+    }
+    if (!spaceRef) {
+      throw new Error('Missing space name/id. Use --space "<nameOrId>".');
+    }
+
+    const { space, lists } = await collectListsBySpace(client, workspaceId, {
+      spaceRef,
+      matchMode,
+    });
+    const fetched = await fetchTasksByLists(client, lists, {
+      includeClosed,
+      maxPages,
+      concurrency,
+    });
+    const tasks = limit ? fetched.tasks.slice(0, limit) : fetched.tasks;
+    const truncated = Boolean(limit && fetched.tasks.length > limit);
+    const summary = buildScopeSummary({
+      scope: space.name || spaceRef,
+      lists,
+      tasks,
+      top,
+    });
+
+    printJson({
+      ok: true,
+      workspaceId,
+      commandAlias: command,
+      source: "space-lists",
+      includeClosed,
+      maxPages,
+      top,
+      limit: limit || null,
+      truncated,
+      pagesFetched: fetched.pagesFetched,
+      reachedLastPage: fetched.reachedLastPage,
+      space,
+      matchedListsCount: lists.length,
+      matchedLists: lists.map((list) => ({
+        listId: list.listId,
+        listName: list.listName,
+        spaceName: list.spaceName,
+        folderName: list.folderName,
+      })),
+      matchedTasks: fetched.tasks.length,
+      returnedTasks: tasks.length,
+      summary,
+      text: buildScopeSummaryText(summary),
+      tasks: tasks.map((task) => ({
+        id: task.id,
+        name: task.name,
+        status: task.status,
+        listId: task.listId,
+        listName: task.listName,
+        spaceName: task.spaceName,
+        folderName: task.folderName,
+        assignees: task.assignees,
+        dueDate: task.dueDate,
+        dueDateIso: task.dueDate ? toIsoTimestamp(task.dueDate) : null,
       })),
     });
     return;
@@ -751,6 +1687,28 @@ async function run() {
     return;
   }
 
+  if (command === "create-task") {
+    const result = await createTaskFlow({
+      client,
+      flags,
+      workspaceIdDefault: process.env.CLICKUP_WORKSPACE_ID?.trim() || "",
+      forceCeoTarget: false,
+    });
+    printJson(result);
+    return;
+  }
+
+  if (command === "create-ceo-task") {
+    const result = await createTaskFlow({
+      client,
+      flags,
+      workspaceIdDefault: process.env.CLICKUP_WORKSPACE_ID?.trim() || "",
+      forceCeoTarget: true,
+    });
+    printJson(result);
+    return;
+  }
+
   if (command === "count-list") {
     const listId = flagValue(flags, "list");
     if (!listId) {
@@ -758,7 +1716,18 @@ async function run() {
     }
     const includeClosed = parseBoolean(flagValue(flags, "include-closed"), false);
     const maxPages = parsePositiveInt(flagValue(flags, "max-pages"), DEFAULT_MAX_PAGES);
-    const result = await countTasksInList(client, listId, { includeClosed, maxPages });
+    let result;
+    try {
+      result = await countTasksInList(client, listId, { includeClosed, maxPages });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("OAUTH_018")) {
+        throw new Error(
+          `List id "${listId}" is invalid for /list/{id}/task. Verify it is a real list id (space ids are not list ids). Try: list-space --workspace <id> --space "<name>" first.`,
+        );
+      }
+      throw error;
+    }
 
     printJson({
       ok: true,
@@ -893,6 +1862,10 @@ async function run() {
     const includeClosed = parseBoolean(flagValue(flags, "include-closed"), false);
     const maxPages = parsePositiveInt(flagValue(flags, "max-pages"), DEFAULT_MAX_PAGES);
     const limit = parseOptionalPositiveInt(flagValue(flags, "limit"));
+    const concurrency = parsePositiveInt(
+      flagValue(flags, "concurrency"),
+      DEFAULT_LIST_FETCH_CONCURRENCY,
+    );
 
     if (!workspaceId) {
       throw new Error("Missing workspace id. Use --workspace <id> or set CLICKUP_WORKSPACE_ID.");
@@ -901,34 +1874,28 @@ async function run() {
       throw new Error('Missing scope name. Use --scope "<name>".');
     }
 
-    const workspaceTasks = await fetchWorkspaceTasks(client, workspaceId, {
-      includeClosed,
-      maxPages,
-    });
-
-    const scopedTasks = workspaceTasks.tasks.filter(
-      (task) =>
-        namesMatch(task.listName, scopeName, matchMode) ||
-        namesMatch(task.spaceName, scopeName, matchMode) ||
-        namesMatch(task.folderName, scopeName, matchMode),
-    );
-
     let matchedLists = [];
-    if (scopedTasks.length > 0) {
-      const listMap = new Map();
-      for (const task of scopedTasks) {
-        const key = `${task.listId}:${task.listName}`;
-        if (!listMap.has(key)) {
-          listMap.set(key, {
-            listId: task.listId,
-            listName: task.listName,
-            spaceName: task.spaceName,
-            folderName: task.folderName,
-          });
-        }
-      }
-      matchedLists = Array.from(listMap.values());
-    } else {
+    let resolvedSpace = null;
+    let source = "matched-lists";
+
+    try {
+      const bySpace = await collectListsBySpace(client, workspaceId, {
+        spaceRef: scopeName,
+        matchMode,
+      });
+      resolvedSpace = bySpace.space;
+      matchedLists = bySpace.lists.map((list) => ({
+        listId: list.listId,
+        listName: list.listName,
+        spaceName: list.spaceName,
+        folderName: list.folderName,
+      }));
+      source = "space-shortcut";
+    } catch {
+      // Scope was not a unique space selector. Continue with generic matching.
+    }
+
+    if (matchedLists.length === 0) {
       const lists = await collectListsByWorkspace(client, workspaceId);
       matchedLists = lists
         .filter(
@@ -942,8 +1909,53 @@ async function run() {
           listName: list.listName,
           spaceName: list.spaceName,
           folderName: list.folderName,
-        }))
-        .slice(0, 50);
+        }));
+      source = "matched-lists";
+    }
+
+    let scopedTasks = [];
+    let pagesFetched = 0;
+    let reachedLastPage = false;
+
+    if (matchedLists.length > 0) {
+      const fetched = await fetchTasksByLists(client, matchedLists, {
+        includeClosed,
+        maxPages,
+        concurrency,
+      });
+      scopedTasks = fetched.tasks;
+      pagesFetched = fetched.pagesFetched;
+      reachedLastPage = fetched.reachedLastPage;
+    } else {
+      source = "workspace-fallback";
+      const workspaceTasks = await fetchWorkspaceTasks(client, workspaceId, {
+        includeClosed,
+        maxPages,
+      });
+      scopedTasks = workspaceTasks.tasks.filter(
+        (task) =>
+          namesMatch(task.listName, scopeName, matchMode) ||
+          namesMatch(task.spaceName, scopeName, matchMode) ||
+          namesMatch(task.folderName, scopeName, matchMode),
+      );
+      pagesFetched = workspaceTasks.pagesFetched;
+      reachedLastPage = workspaceTasks.reachedLastPage;
+
+      if (scopedTasks.length > 0) {
+        const listMap = new Map();
+        for (const task of scopedTasks) {
+          const key = `${task.listId}:${task.listName}`;
+          if (!listMap.has(key)) {
+            listMap.set(key, {
+              listId: task.listId,
+              listName: task.listName,
+              spaceName: task.spaceName,
+              folderName: task.folderName,
+            });
+          }
+        }
+        matchedLists = Array.from(listMap.values());
+      }
     }
 
     const returnedTasks = limit ? scopedTasks.slice(0, limit) : scopedTasks;
@@ -952,12 +1964,14 @@ async function run() {
     printJson({
       ok: true,
       workspaceId,
+      source,
+      spaceShortcut: resolvedSpace,
       scopeName,
       matchMode,
       includeClosed,
       maxPages,
-      pagesFetched: workspaceTasks.pagesFetched,
-      reachedLastPage: workspaceTasks.reachedLastPage,
+      pagesFetched,
+      reachedLastPage,
       matchedTasks: scopedTasks.length,
       returnedTasks: returnedTasks.length,
       truncated,
@@ -979,7 +1993,7 @@ async function run() {
         scopedTasks.length === 0
           ? [
               "No matching tasks were found for this scope with the current filters.",
-              "Try `find-list` to confirm the exact list name, or rerun with `--include-closed true`.",
+              "Try `list-space` / `find-list` to confirm names, or rerun with `--include-closed true`.",
             ]
           : [],
     });
