@@ -1,1 +1,1 @@
-web: npm run crm:chat-proxy
+web: npm run start:heroku
