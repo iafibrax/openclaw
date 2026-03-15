@@ -17,13 +17,9 @@ vi.mock("../agents/pi-embedded.js", () => ({
 vi.mock("../agents/model-catalog.js", () => ({
   loadModelCatalog: vi.fn(),
 }));
-vi.mock("../agents/subagent-announce.js", () => ({
-  runSubagentAnnounceFlow: vi.fn(),
-}));
 
 import { loadModelCatalog } from "../agents/model-catalog.js";
 import { runEmbeddedPiAgent } from "../agents/pi-embedded.js";
-import { runSubagentAnnounceFlow } from "../agents/subagent-announce.js";
 import { runCronIsolatedAgentTurn } from "./isolated-agent.js";
 
 async function withTempHome<T>(fn: (home: string) => Promise<T>): Promise<T> {
@@ -90,7 +86,6 @@ describe("runCronIsolatedAgentTurn", () => {
   beforeEach(() => {
     vi.mocked(runEmbeddedPiAgent).mockReset();
     vi.mocked(loadModelCatalog).mockResolvedValue([]);
-    vi.mocked(runSubagentAnnounceFlow).mockReset().mockResolvedValue(true);
     setActivePluginRegistry(
       createTestRegistry([
         {
@@ -141,11 +136,10 @@ describe("runCronIsolatedAgentTurn", () => {
 
       expect(res.status).toBe("ok");
       expect(deps.sendMessageTelegram).toHaveBeenCalled();
-      expect(runSubagentAnnounceFlow).not.toHaveBeenCalled();
     });
   });
 
-  it("uses shared announce flow when heartbeat ack padding exceeds configured limit", async () => {
+  it("delivers direct text when heartbeat ack padding exceeds configured limit", async () => {
     await withTempHome(async (home) => {
       const storePath = await writeSessionStore(home);
       const deps: CliDeps = {
@@ -191,8 +185,7 @@ describe("runCronIsolatedAgentTurn", () => {
       });
 
       expect(res.status).toBe("ok");
-      expect(runSubagentAnnounceFlow).toHaveBeenCalledTimes(1);
-      expect(deps.sendMessageTelegram).not.toHaveBeenCalled();
+      expect(deps.sendMessageTelegram).toHaveBeenCalledTimes(1);
     });
   });
 });

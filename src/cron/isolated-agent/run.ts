@@ -27,7 +27,6 @@ import {
 import { runEmbeddedPiAgent } from "../../agents/pi-embedded.js";
 import { buildWorkspaceSkillSnapshot } from "../../agents/skills.js";
 import { getSkillsSnapshotVersion } from "../../agents/skills/refresh.js";
-import { runSubagentAnnounceFlow } from "../../agents/subagent-announce.js";
 import { resolveAgentTimeoutMs } from "../../agents/timeout.js";
 import { deriveSessionTotalTokens, hasNonzeroUsage } from "../../agents/usage.js";
 import { ensureAgentWorkspace } from "../../agents/workspace.js";
@@ -37,11 +36,7 @@ import {
   supportsXHighThinking,
 } from "../../auto-reply/thinking.js";
 import { createOutboundSendDeps, type CliDeps } from "../../cli/outbound-send-deps.js";
-import {
-  resolveAgentMainSessionKey,
-  resolveSessionTranscriptPath,
-  updateSessionStore,
-} from "../../config/sessions.js";
+import { resolveSessionTranscriptPath, updateSessionStore } from "../../config/sessions.js";
 import { registerAgentRunContext } from "../../infra/agent-events.js";
 import { deliverOutboundPayloads } from "../../infra/outbound/deliver.js";
 import { getRemoteSkillEligibility } from "../../infra/skills-remote.js";
@@ -325,7 +320,7 @@ export async function runCronIsolatedAgentTurn(params: {
   }
   if (deliveryRequested) {
     commandBody =
-      `${commandBody}\n\nReturn your summary as plain text; it will be delivered automatically. If the task explicitly calls for messaging a specific external recipient, note who/where it should go instead of sending it yourself.`.trim();
+      `${commandBody}\n\nReturn your final response as plain text in the exact format requested. Do not compress or summarize unless explicitly asked. It will be delivered automatically. If the task explicitly calls for messaging a specific external recipient, note who/where it should go instead of sending it yourself.`.trim();
   }
 
   const existingSnapshot = cronSession.sessionEntry.skillsSnapshot;
@@ -513,9 +508,9 @@ export async function runCronIsolatedAgentTurn(params: {
       logWarn(`[cron:${params.job.id}] ${message}`);
       return withRunSession({ status: "ok", summary, outputText });
     }
-    // Shared subagent announce flow is text-based; keep direct outbound delivery
-    // for media/channel payloads so structured content is preserved.
-    if (deliveryPayloadHasStructuredContent) {
+    const hasDeliverableContent =
+      deliveryPayloadHasStructuredContent || Boolean(synthesizedText?.trim());
+    if (hasDeliverableContent) {
       try {
         await deliverOutboundPayloads({
           cfg: cfgWithAgentDefaults,
@@ -527,54 +522,6 @@ export async function runCronIsolatedAgentTurn(params: {
           bestEffort: deliveryBestEffort,
           deps: createOutboundSendDeps(params.deps),
         });
-      } catch (err) {
-        if (!deliveryBestEffort) {
-          return withRunSession({ status: "error", summary, outputText, error: String(err) });
-        }
-      }
-    } else if (synthesizedText) {
-      const announceSessionKey = resolveAgentMainSessionKey({
-        cfg: params.cfg,
-        agentId,
-      });
-      const taskLabel =
-        typeof params.job.name === "string" && params.job.name.trim()
-          ? params.job.name.trim()
-          : `cron:${params.job.id}`;
-      try {
-        const didAnnounce = await runSubagentAnnounceFlow({
-          childSessionKey: runSessionKey,
-          childRunId: `${params.job.id}:${runSessionId}`,
-          requesterSessionKey: announceSessionKey,
-          requesterOrigin: {
-            channel: resolvedDelivery.channel,
-            to: resolvedDelivery.to,
-            accountId: resolvedDelivery.accountId,
-            threadId: resolvedDelivery.threadId,
-          },
-          requesterDisplayKey: announceSessionKey,
-          task: taskLabel,
-          timeoutMs,
-          cleanup: "keep",
-          roundOneReply: synthesizedText,
-          waitForCompletion: false,
-          startedAt: runStartedAt,
-          endedAt: runEndedAt,
-          outcome: { status: "ok" },
-          announceType: "cron job",
-        });
-        if (!didAnnounce) {
-          const message = "cron announce delivery failed";
-          if (!deliveryBestEffort) {
-            return withRunSession({
-              status: "error",
-              summary,
-              outputText,
-              error: message,
-            });
-          }
-          logWarn(`[cron:${params.job.id}] ${message}`);
-        }
       } catch (err) {
         if (!deliveryBestEffort) {
           return withRunSession({ status: "error", summary, outputText, error: String(err) });
