@@ -8,6 +8,21 @@ const readAllowFromStoreMock = vi.fn().mockResolvedValue([]);
 const upsertPairingRequestMock = vi.fn().mockResolvedValue({ code: "PAIRCODE", created: true });
 const saveMediaBufferSpy = vi.fn();
 
+function makeJpegBuffer(): Buffer {
+  return Buffer.from([
+    0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0x00, 0x03, 0x02, 0x02, 0x02, 0x02, 0x02, 0x03, 0x02, 0x02,
+    0x02, 0x03, 0x03, 0x03, 0x03, 0x04, 0x06, 0x04, 0x04, 0x04, 0x04, 0x04, 0x08, 0x06, 0x06, 0x05,
+    0x06, 0x09, 0x08, 0x0a, 0x0a, 0x09, 0x08, 0x09, 0x09, 0x0a, 0x0c, 0x0f, 0x0c, 0x0a, 0x0b, 0x0e,
+    0x0b, 0x09, 0x09, 0x0d, 0x11, 0x0d, 0x0e, 0x0f, 0x10, 0x10, 0x11, 0x10, 0x0a, 0x0c, 0x12, 0x13,
+    0x12, 0x10, 0x13, 0x0f, 0x10, 0x10, 0x10, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x01, 0x00, 0x01,
+    0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01, 0xff, 0xc4, 0x00, 0x14, 0x00, 0x01,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff,
+    0xc4, 0x00, 0x14, 0x10, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0xff, 0xda, 0x00, 0x0c, 0x03, 0x01, 0x00, 0x02, 0x11, 0x03, 0x11, 0x00, 0x3f, 0x00,
+    0xff, 0xd9,
+  ]);
+}
+
 vi.mock("../config/config.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../config/config.js")>();
   return {
@@ -48,21 +63,9 @@ process.env.HOME = HOME;
 vi.mock("@whiskeysockets/baileys", async () => {
   const actual =
     await vi.importActual<typeof import("@whiskeysockets/baileys")>("@whiskeysockets/baileys");
-  const jpegBuffer = Buffer.from([
-    0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0x00, 0x03, 0x02, 0x02, 0x02, 0x02, 0x02, 0x03, 0x02, 0x02,
-    0x02, 0x03, 0x03, 0x03, 0x03, 0x04, 0x06, 0x04, 0x04, 0x04, 0x04, 0x04, 0x08, 0x06, 0x06, 0x05,
-    0x06, 0x09, 0x08, 0x0a, 0x0a, 0x09, 0x08, 0x09, 0x09, 0x0a, 0x0c, 0x0f, 0x0c, 0x0a, 0x0b, 0x0e,
-    0x0b, 0x09, 0x09, 0x0d, 0x11, 0x0d, 0x0e, 0x0f, 0x10, 0x10, 0x11, 0x10, 0x0a, 0x0c, 0x12, 0x13,
-    0x12, 0x10, 0x13, 0x0f, 0x10, 0x10, 0x10, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x01, 0x00, 0x01,
-    0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01, 0xff, 0xc4, 0x00, 0x14, 0x00, 0x01,
-    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff,
-    0xc4, 0x00, 0x14, 0x10, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0xff, 0xda, 0x00, 0x0c, 0x03, 0x01, 0x00, 0x02, 0x11, 0x03, 0x11, 0x00, 0x3f, 0x00,
-    0xff, 0xd9,
-  ]);
   return {
     ...actual,
-    downloadMediaMessage: vi.fn().mockResolvedValue(jpegBuffer),
+    downloadMediaMessage: vi.fn().mockResolvedValue(makeJpegBuffer()),
   };
 });
 
@@ -94,10 +97,27 @@ async function waitForMessage(onMessage: ReturnType<typeof vi.fn>) {
 }
 
 describe("web inbound media saves with extension", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     saveMediaBufferSpy.mockClear();
     resetWebInboundDedupe();
+    vi.clearAllMocks();
+    const baileys = await import("@whiskeysockets/baileys");
+    vi.mocked(baileys.downloadMediaMessage).mockResolvedValue(makeJpegBuffer());
   });
+
+  async function getRealSock() {
+    const { createWaSocket } = await import("./session.js");
+    return (
+      createWaSocket as unknown as () => Promise<{ ev: import("node:events").EventEmitter }>
+    )();
+  }
+
+  async function emitUpsert(
+    sock: { ev: import("node:events").EventEmitter },
+    upsert: unknown,
+  ): Promise<void> {
+    sock.ev.emit("messages.upsert", upsert);
+  }
 
   beforeAll(async () => {
     await fs.rm(HOME, { recursive: true, force: true });
@@ -110,12 +130,7 @@ describe("web inbound media saves with extension", () => {
   it("stores inbound image with jpeg extension", async () => {
     const onMessage = vi.fn();
     const listener = await monitorWebInbox({ verbose: false, onMessage });
-    const { createWaSocket } = await import("./session.js");
-    const realSock = await (
-      createWaSocket as unknown as () => Promise<{
-        ev: import("node:events").EventEmitter;
-      }>
-    )();
+    const realSock = await getRealSock();
 
     const upsert = {
       type: "notify",
@@ -128,7 +143,7 @@ describe("web inbound media saves with extension", () => {
       ],
     };
 
-    realSock.ev.emit("messages.upsert", upsert);
+    await emitUpsert(realSock, upsert);
 
     const msg = await waitForMessage(onMessage);
     const mediaPath = msg.mediaPath;
@@ -143,12 +158,7 @@ describe("web inbound media saves with extension", () => {
   it("extracts mentions from media captions", async () => {
     const onMessage = vi.fn();
     const listener = await monitorWebInbox({ verbose: false, onMessage });
-    const { createWaSocket } = await import("./session.js");
-    const realSock = await (
-      createWaSocket as unknown as () => Promise<{
-        ev: import("node:events").EventEmitter;
-      }>
-    )();
+    const realSock = await getRealSock();
 
     const upsert = {
       type: "notify",
@@ -173,7 +183,7 @@ describe("web inbound media saves with extension", () => {
       ],
     };
 
-    realSock.ev.emit("messages.upsert", upsert);
+    await emitUpsert(realSock, upsert);
 
     const msg = await waitForMessage(onMessage);
     expect(msg.chatType).toBe("group");
@@ -189,12 +199,7 @@ describe("web inbound media saves with extension", () => {
       onMessage,
       mediaMaxMb: 1,
     });
-    const { createWaSocket } = await import("./session.js");
-    const realSock = await (
-      createWaSocket as unknown as () => Promise<{
-        ev: import("node:events").EventEmitter;
-      }>
-    )();
+    const realSock = await getRealSock();
 
     const upsert = {
       type: "notify",
@@ -207,7 +212,7 @@ describe("web inbound media saves with extension", () => {
       ],
     };
 
-    realSock.ev.emit("messages.upsert", upsert);
+    await emitUpsert(realSock, upsert);
 
     await waitForMessage(onMessage);
     expect(saveMediaBufferSpy).toHaveBeenCalled();
@@ -220,12 +225,7 @@ describe("web inbound media saves with extension", () => {
   it("passes document filenames to saveMediaBuffer", async () => {
     const onMessage = vi.fn();
     const listener = await monitorWebInbox({ verbose: false, onMessage });
-    const { createWaSocket } = await import("./session.js");
-    const realSock = await (
-      createWaSocket as unknown as () => Promise<{
-        ev: import("node:events").EventEmitter;
-      }>
-    )();
+    const realSock = await getRealSock();
 
     const fileName = "invoice.pdf";
     const upsert = {
@@ -239,13 +239,120 @@ describe("web inbound media saves with extension", () => {
       ],
     };
 
-    realSock.ev.emit("messages.upsert", upsert);
+    await emitUpsert(realSock, upsert);
 
     const msg = await waitForMessage(onMessage);
     expect(msg.mediaFileName).toBe(fileName);
     expect(saveMediaBufferSpy).toHaveBeenCalled();
     const lastCall = saveMediaBufferSpy.mock.calls.at(-1);
     expect(lastCall?.[4]).toBe(fileName);
+
+    await listener.close();
+  });
+
+  it("retries media download when first payload is empty", async () => {
+    const baileys = await import("@whiskeysockets/baileys");
+    const downloadMediaMessageMock = vi.mocked(baileys.downloadMediaMessage);
+    downloadMediaMessageMock
+      .mockResolvedValueOnce(Buffer.alloc(0))
+      .mockResolvedValueOnce(makeJpegBuffer());
+
+    const onMessage = vi.fn();
+    const listener = await monitorWebInbox({ verbose: false, onMessage });
+    const realSock = await getRealSock();
+
+    const upsert = {
+      type: "notify",
+      messages: [
+        {
+          key: { id: "img-retry", fromMe: false, remoteJid: "444@s.whatsapp.net" },
+          message: { imageMessage: { mimetype: "image/jpeg" } },
+          messageTimestamp: 1_700_000_005,
+        },
+      ],
+    };
+
+    await emitUpsert(realSock, upsert);
+    const msg = await waitForMessage(onMessage);
+    expect(msg.mediaPath).toBeTruthy();
+    expect(downloadMediaMessageMock).toHaveBeenCalledTimes(2);
+
+    await listener.close();
+  });
+
+  it("skips dispatch when all download attempts are empty", async () => {
+    const baileys = await import("@whiskeysockets/baileys");
+    const downloadMediaMessageMock = vi.mocked(baileys.downloadMediaMessage);
+    downloadMediaMessageMock.mockResolvedValue(Buffer.alloc(0));
+
+    const onMessage = vi.fn();
+    const listener = await monitorWebInbox({ verbose: false, onMessage });
+    const realSock = await getRealSock();
+
+    const upsert = {
+      type: "notify",
+      messages: [
+        {
+          key: { id: "img-empty", fromMe: false, remoteJid: "555@s.whatsapp.net" },
+          message: { audioMessage: { mimetype: "audio/ogg; codecs=opus" } },
+          messageTimestamp: 1_700_000_006,
+        },
+      ],
+    };
+
+    await emitUpsert(realSock, upsert);
+    await vi.waitFor(() => expect(downloadMediaMessageMock).toHaveBeenCalledTimes(3));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(onMessage).not.toHaveBeenCalled();
+    expect(downloadMediaMessageMock).toHaveBeenCalledTimes(3);
+
+    await listener.close();
+  });
+
+  it("allows a later upsert of the same message id after empty media download", async () => {
+    const baileys = await import("@whiskeysockets/baileys");
+    const downloadMediaMessageMock = vi.mocked(baileys.downloadMediaMessage);
+    downloadMediaMessageMock
+      .mockResolvedValueOnce(Buffer.alloc(0))
+      .mockResolvedValueOnce(Buffer.alloc(0))
+      .mockResolvedValueOnce(Buffer.alloc(0))
+      .mockResolvedValueOnce(makeJpegBuffer());
+
+    const onMessage = vi.fn();
+    const listener = await monitorWebInbox({ verbose: false, onMessage });
+    const realSock = await getRealSock();
+
+    const firstUpsert = {
+      type: "notify",
+      messages: [
+        {
+          key: { id: "img-recover", fromMe: false, remoteJid: "666@s.whatsapp.net" },
+          message: { audioMessage: { mimetype: "audio/ogg; codecs=opus" } },
+          messageTimestamp: 1_700_000_007,
+        },
+      ],
+    };
+
+    await emitUpsert(realSock, firstUpsert);
+    await vi.waitFor(() => expect(downloadMediaMessageMock).toHaveBeenCalledTimes(3));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(onMessage).not.toHaveBeenCalled();
+
+    const secondUpsert = {
+      type: "notify",
+      messages: [
+        {
+          key: { id: "img-recover", fromMe: false, remoteJid: "666@s.whatsapp.net" },
+          message: { audioMessage: { mimetype: "audio/ogg; codecs=opus" } },
+          messageTimestamp: 1_700_000_007,
+        },
+      ],
+    };
+
+    await emitUpsert(realSock, secondUpsert);
+    const msg = await waitForMessage(onMessage);
+    expect(msg.mediaPath).toBeTruthy();
+    expect(downloadMediaMessageMock).toHaveBeenCalledTimes(4);
 
     await listener.close();
   });

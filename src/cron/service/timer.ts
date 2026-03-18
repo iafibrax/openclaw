@@ -486,15 +486,31 @@ export async function executeJob(
   state: CronServiceState,
   job: CronJob,
   _nowMs: number,
-  _opts: { forced: boolean },
+  opts: {
+    forced: boolean;
+    /**
+     * Optional start timestamp when callers pre-marked the job as running.
+     */
+    startedAtMs?: number;
+    /**
+     * Set true when callers already emitted the "started" event.
+     */
+    startedAlreadyEmitted?: boolean;
+  },
 ) {
   if (!job.state) {
     job.state = {};
   }
-  const startedAt = state.deps.nowMs();
-  job.state.runningAtMs = startedAt;
+  const existingRunningAtMs =
+    typeof job.state.runningAtMs === "number" ? job.state.runningAtMs : undefined;
+  const startedAt = opts.startedAtMs ?? existingRunningAtMs ?? state.deps.nowMs();
+  if (existingRunningAtMs === undefined) {
+    job.state.runningAtMs = startedAt;
+  }
   job.state.lastError = undefined;
-  emit(state, { jobId: job.id, action: "started", runAtMs: startedAt });
+  if (!opts.startedAlreadyEmitted && existingRunningAtMs === undefined) {
+    emit(state, { jobId: job.id, action: "started", runAtMs: startedAt });
+  }
 
   let coreResult: {
     status: "ok" | "error" | "skipped";

@@ -11,7 +11,7 @@ import { saveMediaBuffer } from "../../media/store.js";
 import { jidToE164, resolveJidToE164 } from "../../utils.js";
 import { createWaSocket, getStatusCode, waitForWaConnection } from "../session.js";
 import { checkInboundAccessControl } from "./access-control.js";
-import { isRecentInboundMessage } from "./dedupe.js";
+import { forgetRecentInboundMessage, isRecentInboundMessage } from "./dedupe.js";
 import {
   describeReplyContext,
   extractLocationData,
@@ -171,8 +171,8 @@ export async function monitorWebInbox(options: {
       }
 
       const group = isJidGroup(remoteJid) === true;
-      if (id) {
-        const dedupeKey = `${options.accountId}:${remoteJid}:${id}`;
+      const dedupeKey = id ? `${options.accountId}:${remoteJid}:${id}` : undefined;
+      if (dedupeKey) {
         if (isRecentInboundMessage(dedupeKey)) {
           continue;
         }
@@ -239,12 +239,13 @@ export async function monitorWebInbox(options: {
 
       const location = extractLocationData(msg.message ?? undefined);
       const locationText = location ? formatLocationText(location) : undefined;
+      const mediaPlaceholder = extractMediaPlaceholder(msg.message ?? undefined);
       let body = extractText(msg.message ?? undefined);
       if (locationText) {
         body = [body, locationText].filter(Boolean).join("\n").trim();
       }
       if (!body) {
-        body = extractMediaPlaceholder(msg.message ?? undefined);
+        body = mediaPlaceholder;
         if (!body) {
           continue;
         }
@@ -254,9 +255,22 @@ export async function monitorWebInbox(options: {
       let mediaPath: string | undefined;
       let mediaType: string | undefined;
       let mediaFileName: string | undefined;
+      let mediaDownloadFailed = false;
+      let inboundMedia:
+        | {
+            buffer: Buffer;
+            mimetype?: string;
+            fileName?: string;
+          }
+        | undefined;
       try {
-        const inboundMedia = await downloadInboundMedia(msg as proto.IWebMessageInfo, sock);
-        if (inboundMedia) {
+        inboundMedia = await downloadInboundMedia(msg as proto.IWebMessageInfo, sock);
+      } catch (err) {
+        logVerbose(`Inbound media download failed: ${String(err)}`);
+        mediaDownloadFailed = true;
+      }
+      if (inboundMedia) {
+        try {
           const maxMb =
             typeof options.mediaMaxMb === "number" && options.mediaMaxMb > 0
               ? options.mediaMaxMb
@@ -272,9 +286,21 @@ export async function monitorWebInbox(options: {
           mediaPath = saved.path;
           mediaType = inboundMedia.mimetype;
           mediaFileName = inboundMedia.fileName;
+        } catch (err) {
+          logVerbose(`Inbound media save failed: ${String(err)}`);
         }
-      } catch (err) {
-        logVerbose(`Inbound media download failed: ${String(err)}`);
+      } else if (mediaPlaceholder) {
+        mediaDownloadFailed = true;
+      }
+
+      // If media payload was not available yet, skip dispatch and allow
+      // future upserts for the same message id to retry download.
+      if (mediaDownloadFailed && mediaPlaceholder) {
+        if (dedupeKey) {
+          forgetRecentInboundMessage(dedupeKey);
+        }
+        logVerbose(`Skipping media message ${id ?? "<unknown>"}: media payload unavailable.`);
+        continue;
       }
 
       const chatJid = remoteJid;

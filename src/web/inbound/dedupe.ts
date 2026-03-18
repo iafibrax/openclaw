@@ -15,3 +15,7 @@ export function resetWebInboundDedupe(): void {
 export function isRecentInboundMessage(key: string): boolean {
   return recentInboundMessages.check(key);
 }
+
+export function forgetRecentInboundMessage(key: string): void {
+  recentInboundMessages.forget(key);
+}

@@ -183,24 +183,57 @@ export async function remove(state: CronServiceState, id: string) {
 }
 
 export async function run(state: CronServiceState, id: string, mode?: "due" | "force") {
-  return await locked(state, async () => {
+  const prepared = await locked(state, async () => {
     warnIfDisabled(state, "run");
     await ensureLoaded(state, { skipRecompute: true });
     const job = findJobOrThrow(state, id);
     if (typeof job.state.runningAtMs === "number") {
-      return { ok: true, ran: false, reason: "already-running" as const };
+      return {
+        action: "skip" as const,
+        result: { ok: true, ran: false, reason: "already-running" as const },
+      };
     }
     const now = state.deps.nowMs();
     const due = isJobDue(job, now, { forced: mode === "force" });
     if (!due) {
-      return { ok: true, ran: false, reason: "not-due" as const };
+      return {
+        action: "skip" as const,
+        result: { ok: true, ran: false, reason: "not-due" as const },
+      };
     }
-    await executeJob(state, job, now, { forced: mode === "force" });
-    recomputeNextRuns(state);
+    // Mark the job as running before releasing the service lock so concurrent
+    // manual runs can return already-running immediately.
+    job.state.runningAtMs = now;
+    job.state.lastError = undefined;
+    emit(state, { jobId: job.id, action: "started", runAtMs: now });
     await persist(state);
-    armTimer(state);
-    return { ok: true, ran: true } as const;
+    return {
+      action: "run" as const,
+      job,
+      startedAtMs: now,
+    };
   });
+
+  if (prepared.action === "skip") {
+    return prepared.result;
+  }
+
+  try {
+    await executeJob(state, prepared.job, prepared.startedAtMs, {
+      forced: mode === "force",
+      startedAtMs: prepared.startedAtMs,
+      startedAlreadyEmitted: true,
+    });
+  } finally {
+    await locked(state, async () => {
+      await ensureLoaded(state, { skipRecompute: true });
+      recomputeNextRuns(state);
+      await persist(state);
+      armTimer(state);
+    });
+  }
+
+  return { ok: true, ran: true } as const;
 }
 
 export function wakeNow(

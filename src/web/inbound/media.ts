@@ -3,9 +3,26 @@ import { downloadMediaMessage, normalizeMessageContent } from "@whiskeysockets/b
 import type { createWaSocket } from "../session.js";
 import { logVerbose } from "../../globals.js";
 
+const MAX_MEDIA_DOWNLOAD_ATTEMPTS = 3;
+const MEDIA_DOWNLOAD_RETRY_DELAY_MS = 300;
+
 function unwrapMessage(message: proto.IMessage | undefined): proto.IMessage | undefined {
   const normalized = normalizeMessageContent(message);
   return normalized;
+}
+
+function asBuffer(data: unknown): Buffer | undefined {
+  if (Buffer.isBuffer(data)) {
+    return data;
+  }
+  if (data instanceof Uint8Array) {
+    return Buffer.from(data);
+  }
+  return undefined;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export async function downloadInboundMedia(
@@ -33,19 +50,34 @@ export async function downloadInboundMedia(
   ) {
     return undefined;
   }
-  try {
-    const buffer = await downloadMediaMessage(
-      msg as WAMessage,
-      "buffer",
-      {},
-      {
-        reuploadRequest: sock.updateMediaMessage,
-        logger: sock.logger,
-      },
-    );
-    return { buffer, mimetype, fileName };
-  } catch (err) {
-    logVerbose(`downloadMediaMessage failed: ${String(err)}`);
-    return undefined;
+
+  const messageId = msg.key?.id ?? "<unknown>";
+  for (let attempt = 1; attempt <= MAX_MEDIA_DOWNLOAD_ATTEMPTS; attempt += 1) {
+    try {
+      const downloaded = await downloadMediaMessage(
+        msg as WAMessage,
+        "buffer",
+        {},
+        {
+          reuploadRequest: sock.updateMediaMessage,
+          logger: sock.logger,
+        },
+      );
+      const buffer = asBuffer(downloaded);
+      if (buffer && buffer.byteLength > 0) {
+        return { buffer, mimetype, fileName };
+      }
+      logVerbose(
+        `downloadMediaMessage returned empty payload for ${messageId} (attempt ${attempt}/${MAX_MEDIA_DOWNLOAD_ATTEMPTS})`,
+      );
+    } catch (err) {
+      logVerbose(
+        `downloadMediaMessage failed for ${messageId} (attempt ${attempt}/${MAX_MEDIA_DOWNLOAD_ATTEMPTS}): ${String(err)}`,
+      );
+    }
+    if (attempt < MAX_MEDIA_DOWNLOAD_ATTEMPTS) {
+      await delay(MEDIA_DOWNLOAD_RETRY_DELAY_MS);
+    }
   }
+  return undefined;
 }

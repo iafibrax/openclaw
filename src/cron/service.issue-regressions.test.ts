@@ -297,6 +297,67 @@ describe("Cron issue regressions", () => {
     await store.cleanup();
   });
 
+  it("allows status/list reads while a manual run is in progress", async () => {
+    vi.useRealTimers();
+    const store = await makeStorePath();
+    let resolveRun:
+      | ((value: { status: "ok" | "error" | "skipped"; summary?: string; error?: string }) => void)
+      | undefined;
+    const runIsolatedAgentJob = vi.fn(
+      async () =>
+        await new Promise<{ status: "ok" | "error" | "skipped"; summary?: string; error?: string }>(
+          (resolve) => {
+            resolveRun = resolve;
+          },
+        ),
+    );
+
+    const cron = new CronService({
+      cronEnabled: true,
+      storePath: store.storePath,
+      log: noopLogger,
+      enqueueSystemEvent: vi.fn(),
+      requestHeartbeatNow: vi.fn(),
+      runIsolatedAgentJob,
+    });
+    await cron.start();
+
+    const runAt = Date.now() + 10_000;
+    const job = await cron.add({
+      name: "manual-read-while-running",
+      enabled: true,
+      schedule: { kind: "at", at: new Date(runAt).toISOString() },
+      sessionTarget: "isolated",
+      wakeMode: "next-heartbeat",
+      payload: { kind: "agentTurn", message: "long task" },
+      delivery: { mode: "none" },
+    });
+
+    const runPromise = cron.run(job.id, "force");
+    for (let i = 0; i < 25 && runIsolatedAgentJob.mock.calls.length === 0; i++) {
+      await delay(20);
+    }
+    expect(runIsolatedAgentJob).toHaveBeenCalledTimes(1);
+
+    const statusRace = await Promise.race([
+      cron.status().then(() => "resolved" as const),
+      delay(250).then(() => "timeout" as const),
+    ]);
+    expect(statusRace).toBe("resolved");
+
+    const listRace = await Promise.race([
+      cron.list({ includeDisabled: true }).then(() => "resolved" as const),
+      delay(250).then(() => "timeout" as const),
+    ]);
+    expect(listRace).toBe("resolved");
+
+    resolveRun?.({ status: "ok", summary: "done" });
+    await runPromise;
+
+    cron.stop();
+    await store.cleanup();
+  });
+
   it("records per-job start time and duration for batched due jobs", async () => {
     const store = await makeStorePath();
     const dueAt = Date.parse("2026-02-06T10:05:01.000Z");
