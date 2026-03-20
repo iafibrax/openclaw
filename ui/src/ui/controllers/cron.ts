@@ -171,8 +171,27 @@ export async function runCronJob(state: CronState, job: CronJob) {
   state.cronBusy = true;
   state.cronError = null;
   try {
-    await state.client.request("cron.run", { id: job.id, mode: "force" });
-    await loadCronRuns(state, job.id);
+    const runPromise = state.client.request("cron.run", { id: job.id, mode: "force" });
+    const settledQuickly = await Promise.race([
+      runPromise.then(() => true),
+      new Promise<boolean>((resolve) => {
+        window.setTimeout(() => resolve(false), 1_500);
+      }),
+    ]);
+
+    if (settledQuickly) {
+      await loadCronRuns(state, job.id);
+      return;
+    }
+
+    // Keep the UI responsive while long-running cron executions continue.
+    void runPromise
+      .then(async () => {
+        await loadCronRuns(state, job.id);
+      })
+      .catch((err) => {
+        state.cronError = String(err);
+      });
   } catch (err) {
     state.cronError = String(err);
   } finally {

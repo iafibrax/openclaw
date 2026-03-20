@@ -206,7 +206,6 @@ export async function run(state: CronServiceState, id: string, mode?: "due" | "f
     job.state.runningAtMs = now;
     job.state.lastError = undefined;
     emit(state, { jobId: job.id, action: "started", runAtMs: now });
-    await persist(state);
     return {
       action: "run" as const,
       job,

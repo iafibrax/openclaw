@@ -1,0 +1,987 @@
+{
+  "generatedAt": "2026-03-19T20:30:40Z",
+  "source": "~/.openclaw/openclaw.json + ~/.openclaw/agents/*/sessions/sessions.json + ~/.openclaw/cron/jobs.json",
+  "gateway": {
+    "mode": "local",
+    "bind": "loopback",
+    "port": 18789,
+    "authMode": "token",
+    "hasGatewayToken": true,
+    "hasRemoteToken": true,
+    "tailscaleMode": "off"
+  },
+  "tools": {
+    "agentToAgentEnabled": true,
+    "agentToAgentAllowAll": false,
+    "execHost": "gateway",
+    "execSecurity": "full",
+    "execAsk": "off"
+  },
+  "bindings": [
+    {
+      "agentId": "main",
+      "match": {
+        "channel": "whatsapp",
+        "accountId": "default"
+      }
+    },
+    {
+      "agentId": "comercial",
+      "match": {
+        "channel": "whatsapp",
+        "accountId": "commercial"
+      }
+    },
+    {
+      "agentId": "fibrax-mind",
+      "match": {
+        "channel": "whatsapp",
+        "accountId": "fibrax-mind"
+      }
+    },
+    {
+      "agentId": "mujeres-inversionistas",
+      "match": {
+        "channel": "whatsapp",
+        "accountId": "mujeres-inversionistas"
+      }
+    }
+  ],
+  "channels": {
+    "whatsapp": {
+      "globalDmPolicy": "open",
+      "globalGroupPolicy": "allowlist",
+      "mediaMaxMb": 50,
+      "accounts": {
+        "commercial": {
+          "name": "WhatsApp Comercial",
+          "enabled": true,
+          "dmPolicy": "open",
+          "groupPolicy": "allowlist",
+          "allowFromCount": 1
+        },
+        "default": {
+          "name": "WhatsApp Principal",
+          "enabled": true,
+          "dmPolicy": "allowlist",
+          "groupPolicy": "allowlist",
+          "allowFromCount": 8
+        },
+        "fibrax-mind": {
+          "name": "WhatsApp Fibrax Mind",
+          "enabled": true,
+          "dmPolicy": "open",
+          "groupPolicy": "allowlist",
+          "allowFromCount": 1
+        },
+        "mujeres-inversionistas": {
+          "name": "WhatsApp Mujeres Inversionistas",
+          "enabled": true,
+          "dmPolicy": "open",
+          "groupPolicy": "allowlist",
+          "allowFromCount": 1
+        }
+      }
+    }
+  },
+  "integrations": {
+    "clickup": {
+      "hasApiKey": true,
+      "workspaceId": "9017310603",
+      "defaultListName": "Referidos",
+      "corpScopeName": "Direccion General"
+    },
+    "sqlserver": {
+      "host": "fibrax.database.windows.net",
+      "database": "Fibrax",
+      "port": "1433",
+      "hasUser": true,
+      "hasPassword": true,
+      "maxRows": "200",
+      "allowedTablesConfigured": true
+    },
+    "ghl": {
+      "baseUrl": "https://services.leadconnectorhq.com",
+      "hasGlobalToken": true,
+      "defaultLocationId": "cX1QLQlLHj1OPhvG4a59",
+      "locationIdsDetected": ["qKbjy5p0Jqd3UKQh52lj", "E8medlBb1d4rHrSATNYK"]
+    }
+  },
+  "docker": {
+    "collectedAt": "2026-03-19T20:06:00.000Z",
+    "engine": {
+      "clientVersion": "29.2.1",
+      "serverVersion": "29.2.1",
+      "apiVersion": "1.53",
+      "platform": "Docker Desktop 4.63.0 (220185)",
+      "daemonName": "docker-desktop",
+      "osType": "linux",
+      "architecture": "aarch64"
+    },
+    "summary": {
+      "containersTotal": 7,
+      "containersRunning": 7,
+      "containersPaused": 0,
+      "containersStopped": 0,
+      "images": 4
+    },
+    "composeProjects": [
+      {
+        "name": "openclaw",
+        "status": "running(2)",
+        "configFiles": "/Users/desarrollofibrax/Documents/GitHub/openclaw/docker-compose.yml"
+      }
+    ],
+    "runningContainers": [
+      {
+        "name": "openclaw-openclaw-cli-run-eec4b68542e1",
+        "image": "openclaw:local",
+        "status": "Up 30 hours",
+        "networks": "openclaw_default",
+        "ports": ""
+      },
+      {
+        "name": "openclaw-openclaw-cli-run-6e9333003f48",
+        "image": "openclaw:local",
+        "status": "Up 30 hours",
+        "networks": "openclaw_default",
+        "ports": ""
+      },
+      {
+        "name": "dreamy_carson",
+        "image": "docker/welcome-to-docker:latest",
+        "status": "Up 31 hours",
+        "networks": "bridge",
+        "ports": "80/tcp"
+      },
+      {
+        "name": "sion-tunnel",
+        "image": "cloudflare/cloudflared:latest",
+        "status": "Up 31 hours",
+        "networks": "bridge",
+        "ports": ""
+      }
+    ],
+    "exitedContainers": [
+      {
+        "name": "confident_hugle",
+        "image": "docker/welcome-to-docker:latest",
+        "status": "Exited (255) 31 hours ago",
+        "networks": "bridge",
+        "ports": "80/tcp"
+      },
+      {
+        "name": "sion-gateway",
+        "image": "sion-openclaw:latest",
+        "status": "Exited (255) 31 hours ago",
+        "networks": "bridge",
+        "ports": "0.0.0.0:18789-18790->18789-18790/tcp"
+      },
+      {
+        "name": "welcome-to-docker",
+        "image": "docker/welcome-to-docker:latest",
+        "status": "Exited (255) 31 hours ago",
+        "networks": "bridge",
+        "ports": "0.0.0.0:8088->80/tcp"
+      }
+    ]
+  },
+  "skillsCatalog": {
+    "voice-call": {
+      "hasApiKey": false,
+      "envKeys": [],
+      "disabled": false
+    },
+    "gohighlevel-referidos": {
+      "hasApiKey": false,
+      "envKeys": ["GHL_TOKEN", "GHL_BASE_URL", "GHL_LOCATION_ID", "GHL_LOCATION_TOKENS"],
+      "disabled": false
+    },
+    "clickup": {
+      "hasApiKey": true,
+      "envKeys": ["CLICKUP_DEFAULT_LIST_NAME", "CLICKUP_WORKSPACE_ID", "CLICKUP_CORP_SCOPE_NAME"],
+      "disabled": false
+    },
+    "crm-hr-readonly": {
+      "hasApiKey": false,
+      "envKeys": ["CRM_FX_API_BASE_URL", "CRM_FX_API_TIMEOUT_MS"],
+      "disabled": false
+    },
+    "gohighlevel-admin": {
+      "hasApiKey": false,
+      "envKeys": ["GHL_TOKEN", "GHL_BASE_URL", "GHL_LOCATION_ID", "GHL_LOCATION_TOKENS"],
+      "disabled": false
+    },
+    "sqlserver-readonly": {
+      "hasApiKey": false,
+      "envKeys": [
+        "MSSQL_ALLOWED_TABLES",
+        "MSSQL_HOST",
+        "MSSQL_DATABASE",
+        "MSSQL_USER",
+        "MSSQL_PORT",
+        "MSSQL_CONNECTION_TIMEOUT_MS",
+        "MSSQL_REQUEST_TIMEOUT_MS",
+        "MSSQL_ENCRYPT",
+        "MSSQL_TRUST_SERVER_CERTIFICATE",
+        "MSSQL_ENABLE_ARITH_ABORT",
+        "MSSQL_ABORT_TRANSACTION_ON_ERROR",
+        "MSSQL_POOL_MAX",
+        "MSSQL_POOL_MIN",
+        "MSSQL_POOL_IDLE_TIMEOUT_MS",
+        "MSSQL_POOL_ACQUIRE_TIMEOUT_MS",
+        "MSSQL_POOL_CREATE_TIMEOUT_MS",
+        "MSSQL_POOL_DESTROY_TIMEOUT_MS",
+        "MSSQL_POOL_REAP_INTERVAL_MS",
+        "MSSQL_POOL_CREATE_RETRY_INTERVAL_MS",
+        "MSSQL_MAX_ROWS",
+        "MSSQL_PASSWORD"
+      ],
+      "disabled": false
+    }
+  },
+  "cron": {
+    "maxConcurrentRuns": 3,
+    "jobCount": 4,
+    "jobs": [
+      {
+        "id": "acd4ed59-2271-4964-a683-71558ecd61ba",
+        "name": "Reporte ejecutivo empresarial AP",
+        "agentId": "main",
+        "enabled": true,
+        "schedule": "0 7 * * * (America/Cancun)",
+        "sessionTarget": "isolated",
+        "wakeMode": "now",
+        "delivery": {
+          "mode": "none",
+          "channel": "whatsapp",
+          "to": "+529981904429"
+        },
+        "lastStatus": "ok",
+        "lastRunAtMs": 1773921600021,
+        "nextRunAtMs": 1774008000000
+      },
+      {
+        "id": "d98c825c-115b-4a3a-8e9c-31c39ef89182",
+        "name": "Reporte ejecutivo empresarial Oscar",
+        "agentId": "main",
+        "enabled": true,
+        "schedule": "15 7 * * * (America/Cancun)",
+        "sessionTarget": "isolated",
+        "wakeMode": "now",
+        "delivery": {
+          "mode": "none",
+          "channel": "whatsapp",
+          "to": "+529981254091"
+        },
+        "lastStatus": "ok",
+        "lastRunAtMs": 1773922003436,
+        "nextRunAtMs": 1774008000000
+      },
+      {
+        "id": "0ae4cd97-e142-49af-8da0-7adce6c1b425",
+        "name": "Reporte ejecutivo empresarial Alma",
+        "agentId": "main",
+        "enabled": true,
+        "schedule": "30 7 * * * (America/Cancun)",
+        "sessionTarget": "isolated",
+        "wakeMode": "now",
+        "delivery": {
+          "mode": "none",
+          "channel": "whatsapp",
+          "to": "+529988961832"
+        },
+        "lastStatus": "ok",
+        "lastRunAtMs": 1773922442765,
+        "nextRunAtMs": 1774008000000
+      },
+      {
+        "id": "c0ca9a80-5bf1-4731-811d-44fb92f01bda",
+        "name": "Reporte ejecutivo empresarial Joel",
+        "agentId": "main",
+        "enabled": true,
+        "schedule": "45 7 * * * (America/Cancun)",
+        "sessionTarget": "isolated",
+        "wakeMode": "now",
+        "delivery": {
+          "mode": "none",
+          "channel": "whatsapp",
+          "to": "+529984927652"
+        },
+        "lastStatus": "ok",
+        "lastRunAtMs": 1773922775139,
+        "nextRunAtMs": 1774008000000
+      }
+    ]
+  },
+  "agents": [
+    {
+      "id": "atencion-clientes",
+      "configuredInOpenclaw": true,
+      "identity": "Gerente Atencion Clientes",
+      "name": "atencion-clientes",
+      "workspace": "/Users/desarrollofibrax/.openclaw/workspace-atencion-clientes",
+      "agentDir": "/Users/desarrollofibrax/.openclaw/agents/atencion-clientes/agent",
+      "modelConfigured": "openai/gpt-5.1-codex",
+      "toolsProfileConfigured": null,
+      "allowedSubagents": [],
+      "skillsFromLastMain": [
+        "clickup",
+        "coding-agent",
+        "gohighlevel",
+        "healthcheck",
+        "openai-image-gen",
+        "openai-whisper-api",
+        "skill-creator",
+        "weather"
+      ],
+      "lastMainChannel": "webchat",
+      "lastMainAccountId": null,
+      "lastMainTo": null,
+      "lastMainUpdatedAtMs": 1771423618217,
+      "whatsappStats": {
+        "accounts": [],
+        "directCount": 0,
+        "groupCount": 0,
+        "directSample": []
+      },
+      "puedesHacer": [
+        "Reporte SLA (primera respuesta, resolucion, backlog).",
+        "Clasificacion por severidad y causa.",
+        "Playbooks de respuesta y escalacion."
+      ],
+      "hasAgentsMd": true,
+      "hasMemoryMd": true,
+      "hasMemoryFolder": false
+    },
+    {
+      "id": "calidad",
+      "configuredInOpenclaw": true,
+      "identity": "Gerente Calidad",
+      "name": "calidad",
+      "workspace": "/Users/desarrollofibrax/.openclaw/workspace-calidad",
+      "agentDir": "/Users/desarrollofibrax/.openclaw/agents/calidad/agent",
+      "modelConfigured": "openai/gpt-5.1-codex",
+      "toolsProfileConfigured": null,
+      "allowedSubagents": [],
+      "skillsFromLastMain": [
+        "clickup",
+        "coding-agent",
+        "gohighlevel",
+        "healthcheck",
+        "openai-image-gen",
+        "openai-whisper-api",
+        "skill-creator",
+        "weather"
+      ],
+      "lastMainChannel": "webchat",
+      "lastMainAccountId": null,
+      "lastMainTo": null,
+      "lastMainUpdatedAtMs": 1771423419738,
+      "whatsappStats": {
+        "accounts": [],
+        "directCount": 0,
+        "groupCount": 0,
+        "directSample": []
+      },
+      "puedesHacer": [
+        "Reporte de defectos por proyecto o proceso.",
+        "Causa raiz (5 whys) + plan CAPA.",
+        "Criterios de aceptacion verificables."
+      ],
+      "hasAgentsMd": true,
+      "hasMemoryMd": true,
+      "hasMemoryFolder": false
+    },
+    {
+      "id": "cobranza",
+      "configuredInOpenclaw": true,
+      "identity": "Gerente Cobranza",
+      "name": "cobranza",
+      "workspace": "/Users/desarrollofibrax/.openclaw/workspace-cobranza",
+      "agentDir": "/Users/desarrollofibrax/.openclaw/agents/cobranza/agent",
+      "modelConfigured": "openai/gpt-5.1-codex",
+      "toolsProfileConfigured": null,
+      "allowedSubagents": [],
+      "skillsFromLastMain": [
+        "clickup",
+        "coding-agent",
+        "gohighlevel",
+        "healthcheck",
+        "openai-image-gen",
+        "openai-whisper-api",
+        "skill-creator",
+        "weather"
+      ],
+      "lastMainChannel": "webchat",
+      "lastMainAccountId": null,
+      "lastMainTo": null,
+      "lastMainUpdatedAtMs": 1771423621047,
+      "whatsappStats": {
+        "accounts": [],
+        "directCount": 0,
+        "groupCount": 0,
+        "directSample": []
+      },
+      "puedesHacer": [
+        "Segmentar cartera (0-30, 31-60, 61-90, 90+).",
+        "Top deudores + plan de contacto.",
+        "Plantillas de mensajes por etapa (WhatsApp/correo)."
+      ],
+      "hasAgentsMd": true,
+      "hasMemoryMd": true,
+      "hasMemoryFolder": false
+    },
+    {
+      "id": "comercial",
+      "configuredInOpenclaw": true,
+      "identity": "fx IA",
+      "name": "comercial",
+      "workspace": "/Users/desarrollofibrax/.openclaw/workspace-comercial",
+      "agentDir": "/Users/desarrollofibrax/.openclaw/agents/comercial/agent",
+      "modelConfigured": "openai/gpt-5.1-codex",
+      "toolsProfileConfigured": null,
+      "allowedSubagents": ["obra", "desarrollo"],
+      "skillsFromLastMain": [
+        "clickup",
+        "coding-agent",
+        "healthcheck",
+        "openai-image-gen",
+        "openai-whisper-api",
+        "skill-creator",
+        "weather",
+        "gohighlevel-referidos"
+      ],
+      "lastMainChannel": "whatsapp",
+      "lastMainAccountId": "commercial",
+      "lastMainTo": "+5214141125878",
+      "lastMainUpdatedAtMs": 1772559776154,
+      "whatsappStats": {
+        "accounts": ["commercial"],
+        "directCount": 35,
+        "groupCount": 1,
+        "directSample": [
+          "+5214141125878",
+          "+5219984927652",
+          "+16263653874",
+          "+15622987932",
+          "+5219843096411",
+          "+5219842540551",
+          "+5219841286440",
+          "+5219841783732",
+          "+5219971104111",
+          "+5219981692231"
+        ]
+      },
+      "puedesHacer": [],
+      "hasAgentsMd": true,
+      "hasMemoryMd": true,
+      "hasMemoryFolder": false
+    },
+    {
+      "id": "concierge-vip",
+      "configuredInOpenclaw": true,
+      "identity": "Concierge VIP",
+      "name": "concierge-vip",
+      "workspace": "/Users/desarrollofibrax/.openclaw/workspace-concierge-vip",
+      "agentDir": "/Users/desarrollofibrax/.openclaw/agents/concierge-vip/agent",
+      "modelConfigured": "openai/gpt-5.1-codex",
+      "toolsProfileConfigured": null,
+      "allowedSubagents": [],
+      "skillsFromLastMain": [
+        "clickup",
+        "coding-agent",
+        "gohighlevel",
+        "healthcheck",
+        "openai-image-gen",
+        "openai-whisper-api",
+        "skill-creator",
+        "weather"
+      ],
+      "lastMainChannel": "webchat",
+      "lastMainAccountId": null,
+      "lastMainTo": null,
+      "lastMainUpdatedAtMs": 1771423682167,
+      "whatsappStats": {
+        "accounts": [],
+        "directCount": 0,
+        "groupCount": 0,
+        "directSample": []
+      },
+      "puedesHacer": [
+        "Itinerarios, recordatorios y checklists de viaje/eventos.",
+        "Scripts de confirmacion y seguimiento.",
+        "Manejo de incidencias con alternativas."
+      ],
+      "hasAgentsMd": true,
+      "hasMemoryMd": true,
+      "hasMemoryFolder": false
+    },
+    {
+      "id": "contabilidad",
+      "configuredInOpenclaw": true,
+      "identity": "Gerente Contabilidad",
+      "name": "contabilidad",
+      "workspace": "/Users/desarrollofibrax/.openclaw/workspace-contabilidad",
+      "agentDir": "/Users/desarrollofibrax/.openclaw/agents/contabilidad/agent",
+      "modelConfigured": "openai/gpt-5.1-codex",
+      "toolsProfileConfigured": null,
+      "allowedSubagents": [],
+      "skillsFromLastMain": [
+        "clickup",
+        "coding-agent",
+        "healthcheck",
+        "openai-image-gen",
+        "openai-whisper-api",
+        "skill-creator",
+        "weather",
+        "sion-reportes"
+      ],
+      "lastMainChannel": "webchat",
+      "lastMainAccountId": null,
+      "lastMainTo": null,
+      "lastMainUpdatedAtMs": 1771597088917,
+      "whatsappStats": {
+        "accounts": [],
+        "directCount": 0,
+        "groupCount": 0,
+        "directSample": []
+      },
+      "puedesHacer": [
+        "Estado de cierre (que falta, por que, responsables).",
+        "Validaciones de integridad (facturas, XML, complementos, timbrado).",
+        "Conciliacion: diferencias y acciones."
+      ],
+      "hasAgentsMd": true,
+      "hasMemoryMd": true,
+      "hasMemoryFolder": false
+    },
+    {
+      "id": "desarrollo",
+      "configuredInOpenclaw": true,
+      "identity": "Gerente Desarrollo",
+      "name": "desarrollo",
+      "workspace": "/Users/desarrollofibrax/.openclaw/workspace-desarrollo",
+      "agentDir": "/Users/desarrollofibrax/.openclaw/agents/desarrollo/agent",
+      "modelConfigured": "openai/gpt-5.1-codex",
+      "toolsProfileConfigured": null,
+      "allowedSubagents": [],
+      "skillsFromLastMain": [
+        "clickup",
+        "coding-agent",
+        "healthcheck",
+        "openai-image-gen",
+        "openai-whisper-api",
+        "session-logs",
+        "skill-creator",
+        "weather",
+        "sqlserver-readonly"
+      ],
+      "lastMainChannel": "webchat",
+      "lastMainAccountId": null,
+      "lastMainTo": null,
+      "lastMainUpdatedAtMs": 1773177146294,
+      "whatsappStats": {
+        "accounts": [],
+        "directCount": 0,
+        "groupCount": 0,
+        "directSample": []
+      },
+      "puedesHacer": [
+        "Estado por modulo: En progreso / Bloqueado / Listo para QA / En produccion.",
+        "Identificar bloqueos (dependencias, accesos, requisitos incompletos).",
+        "Proponer roadmap corto (hoy/semana/sprint).",
+        "Generar checklist de release (QA, UAT, deploy, rollback, monitoreo).",
+        "Consultas **solo lectura** a SQL Server (SELECT) cuando la solicitud venga claramente como escalamiento:",
+        "Desde **SION IA** (cualquier consulta permitida por policy).",
+        "Desde **fx IA** solo para **inventarios/disponibilidad** por motivo comercial (lotes activos y desarrollos vigentes)."
+      ],
+      "hasAgentsMd": true,
+      "hasMemoryMd": true,
+      "hasMemoryFolder": false
+    },
+    {
+      "id": "fibrax-mind",
+      "configuredInOpenclaw": true,
+      "identity": "Fibrax Mind IA",
+      "name": "fibrax-mind",
+      "workspace": "/Users/desarrollofibrax/.openclaw/workspace-fibrax-mind",
+      "agentDir": "/Users/desarrollofibrax/.openclaw/agents/fibrax-mind/agent",
+      "modelConfigured": "openai/gpt-5.1-codex",
+      "toolsProfileConfigured": null,
+      "allowedSubagents": [],
+      "skillsFromLastMain": [
+        "sqlserver-readonly",
+        "clickup",
+        "gog",
+        "gohighlevel",
+        "healthcheck",
+        "openai-image-gen",
+        "openai-whisper-api",
+        "skill-creator",
+        "weather"
+      ],
+      "lastMainChannel": "whatsapp",
+      "lastMainAccountId": "fibrax-mind",
+      "lastMainTo": "+5219984149274",
+      "lastMainUpdatedAtMs": 1773934360211,
+      "whatsappStats": {
+        "accounts": ["fibrax-mind"],
+        "directCount": 13,
+        "groupCount": 0,
+        "directSample": [
+          "+5219984927652",
+          "+12245091172",
+          "+18723756403",
+          "+13479465440",
+          "+17733299873",
+          "+15169032871",
+          "+18155400366",
+          "+5219981688159",
+          "+5219516556625",
+          "+17739344708"
+        ]
+      },
+      "puedesHacer": [],
+      "hasAgentsMd": true,
+      "hasMemoryMd": false,
+      "hasMemoryFolder": false
+    },
+    {
+      "id": "juridico",
+      "configuredInOpenclaw": true,
+      "identity": "Gerente Juridico",
+      "name": "juridico",
+      "workspace": "/Users/desarrollofibrax/.openclaw/workspace-juridico",
+      "agentDir": "/Users/desarrollofibrax/.openclaw/agents/juridico/agent",
+      "modelConfigured": "openai/gpt-5.1-codex",
+      "toolsProfileConfigured": null,
+      "allowedSubagents": [],
+      "skillsFromLastMain": [
+        "clickup",
+        "coding-agent",
+        "healthcheck",
+        "openai-image-gen",
+        "openai-whisper-api",
+        "skill-creator",
+        "weather"
+      ],
+      "lastMainChannel": "webchat",
+      "lastMainAccountId": null,
+      "lastMainTo": null,
+      "lastMainUpdatedAtMs": 1772566870745,
+      "whatsappStats": {
+        "accounts": [],
+        "directCount": 0,
+        "groupCount": 0,
+        "directSample": []
+      },
+      "puedesHacer": [
+        "Resumen de contratos, pendientes y fechas clave.",
+        "Matriz de riesgos (alto/medio/bajo) con mitigacion.",
+        "Checklist de cumplimiento por proceso.",
+        "Consultar politicas y procesos internos desde la Wiki FX (ClickUp) cuando esten disponibles en `MEMORY.md` (ClickUp Wiki Sync)."
+      ],
+      "hasAgentsMd": true,
+      "hasMemoryMd": true,
+      "hasMemoryFolder": false
+    },
+    {
+      "id": "main",
+      "configuredInOpenclaw": true,
+      "identity": "SION IA",
+      "name": null,
+      "workspace": "/Users/desarrollofibrax/.openclaw/workspace-sion",
+      "agentDir": null,
+      "modelConfigured": "openai/gpt-5.1-codex",
+      "toolsProfileConfigured": "full",
+      "allowedSubagents": [],
+      "skillsFromLastMain": [
+        "sqlserver-readonly",
+        "clickup",
+        "gog",
+        "healthcheck",
+        "openai-image-gen",
+        "openai-whisper-api",
+        "skill-creator",
+        "weather"
+      ],
+      "lastMainChannel": "webchat",
+      "lastMainAccountId": "default",
+      "lastMainTo": "+5219984927652",
+      "lastMainUpdatedAtMs": 1773949449328,
+      "whatsappStats": {
+        "accounts": ["default", "commercial", "mujeres-inversionistas", "fibrax-mind"],
+        "directCount": 19,
+        "groupCount": 10,
+        "directSample": [
+          "+5219981904429",
+          "+16263653874",
+          "+5219988961832",
+          "+5219984149274",
+          "+15622987932",
+          "+527145994762",
+          "+529981904429",
+          "+5219981254091",
+          "+17145994762",
+          "+5219841574342"
+        ]
+      },
+      "puedesHacer": [],
+      "hasAgentsMd": true,
+      "hasMemoryMd": true,
+      "hasMemoryFolder": true
+    },
+    {
+      "id": "marketing",
+      "configuredInOpenclaw": true,
+      "identity": "Gerente Marketing",
+      "name": "marketing",
+      "workspace": "/Users/desarrollofibrax/.openclaw/workspace-marketing",
+      "agentDir": "/Users/desarrollofibrax/.openclaw/agents/marketing/agent",
+      "modelConfigured": "openai/gpt-5.1-codex",
+      "toolsProfileConfigured": null,
+      "allowedSubagents": [],
+      "skillsFromLastMain": [
+        "coding-agent",
+        "healthcheck",
+        "openai-image-gen",
+        "openai-whisper-api",
+        "session-logs",
+        "skill-creator",
+        "weather"
+      ],
+      "lastMainChannel": "webchat",
+      "lastMainAccountId": null,
+      "lastMainTo": null,
+      "lastMainUpdatedAtMs": 1771601001747,
+      "whatsappStats": {
+        "accounts": [],
+        "directCount": 0,
+        "groupCount": 0,
+        "directSample": []
+      },
+      "puedesHacer": [
+        "Estado de campanas (Meta/Google/TikTok) y KPIs (leads, CPL, ROAS).",
+        "Auditoria rapida del embudo (landing -> formulario -> CRM -> seguimiento).",
+        "Sugerir optimizaciones (copy, creatividades, audiencias, seguimiento)."
+      ],
+      "hasAgentsMd": true,
+      "hasMemoryMd": true,
+      "hasMemoryFolder": false
+    },
+    {
+      "id": "mujeres-inversionistas",
+      "configuredInOpenclaw": true,
+      "identity": "Mujeres inversionistas IA",
+      "name": "mujeres-inversionistas",
+      "workspace": "/Users/desarrollofibrax/.openclaw/workspace-mujeres-inversionistas",
+      "agentDir": "/Users/desarrollofibrax/.openclaw/agents/mujeres-inversionistas/agent",
+      "modelConfigured": "openai/gpt-5.1-codex",
+      "toolsProfileConfigured": null,
+      "allowedSubagents": [],
+      "skillsFromLastMain": [
+        "sqlserver-readonly",
+        "clickup",
+        "gog",
+        "healthcheck",
+        "openai-image-gen",
+        "openai-whisper-api",
+        "skill-creator",
+        "weather"
+      ],
+      "lastMainChannel": "webchat",
+      "lastMainAccountId": "mujeres-inversionistas",
+      "lastMainTo": "+5219984927652",
+      "lastMainUpdatedAtMs": 1773930560052,
+      "whatsappStats": {
+        "accounts": ["mujeres-inversionistas"],
+        "directCount": 13,
+        "groupCount": 0,
+        "directSample": [
+          "+5219984927652",
+          "+19514101190",
+          "+17145534511",
+          "+19515911388",
+          "+13102615812",
+          "+19092368627",
+          "+17147590308",
+          "+17609922474",
+          "+5219982043180",
+          "+15622987932"
+        ]
+      },
+      "puedesHacer": [],
+      "hasAgentsMd": true,
+      "hasMemoryMd": false,
+      "hasMemoryFolder": false
+    },
+    {
+      "id": "obra",
+      "configuredInOpenclaw": true,
+      "identity": "Gerente Obra",
+      "name": "obra",
+      "workspace": "/Users/desarrollofibrax/.openclaw/workspace-obra",
+      "agentDir": "/Users/desarrollofibrax/.openclaw/agents/obra/agent",
+      "modelConfigured": "openai/gpt-5.1-codex",
+      "toolsProfileConfigured": null,
+      "allowedSubagents": [],
+      "skillsFromLastMain": [
+        "clickup",
+        "coding-agent",
+        "healthcheck",
+        "openai-image-gen",
+        "openai-whisper-api",
+        "skill-creator",
+        "weather",
+        "sqlserver-readonly"
+      ],
+      "lastMainChannel": "webchat",
+      "lastMainAccountId": null,
+      "lastMainTo": null,
+      "lastMainUpdatedAtMs": 1771423387596,
+      "whatsappStats": {
+        "accounts": [],
+        "directCount": 0,
+        "groupCount": 0,
+        "directSample": []
+      },
+      "puedesHacer": [
+        "Avance por fase (porcentaje, hitos completados, siguientes hitos).",
+        "Control de riesgos (clima, materiales, permisos, contratistas).",
+        "Pendientes criticos con responsable y fecha compromiso.",
+        "Inventarios de disponibilidad (lotes activos) SOLO lectura para apoyar al area comercial."
+      ],
+      "hasAgentsMd": true,
+      "hasMemoryMd": true,
+      "hasMemoryFolder": true
+    },
+    {
+      "id": "recursos-humanos",
+      "configuredInOpenclaw": true,
+      "identity": "Gerente RH",
+      "name": "recursos-humanos",
+      "workspace": "/Users/desarrollofibrax/.openclaw/workspace-recursos-humanos",
+      "agentDir": "/Users/desarrollofibrax/.openclaw/agents/recursos-humanos/agent",
+      "modelConfigured": "openai/gpt-5.1-codex",
+      "toolsProfileConfigured": null,
+      "allowedSubagents": [],
+      "skillsFromLastMain": [
+        "clickup",
+        "coding-agent",
+        "gohighlevel",
+        "healthcheck",
+        "openai-image-gen",
+        "openai-whisper-api",
+        "skill-creator",
+        "weather"
+      ],
+      "lastMainChannel": "webchat",
+      "lastMainAccountId": null,
+      "lastMainTo": null,
+      "lastMainUpdatedAtMs": 1772202260817,
+      "whatsappStats": {
+        "accounts": [],
+        "directCount": 0,
+        "groupCount": 0,
+        "directSample": []
+      },
+      "puedesHacer": [
+        "Estado de vacantes (abiertas/cerradas y etapa).",
+        "Resumen de incidencias y rotacion.",
+        "Planes de onboarding y capacitacion.",
+        "Reglas de organigrama y roles."
+      ],
+      "hasAgentsMd": true,
+      "hasMemoryMd": true,
+      "hasMemoryFolder": false
+    },
+    {
+      "id": "sion",
+      "configuredInOpenclaw": false,
+      "identity": null,
+      "name": null,
+      "workspace": "/Users/desarrollofibrax/.openclaw/workspace-sion",
+      "agentDir": null,
+      "modelConfigured": "openai/gpt-5.1-codex",
+      "toolsProfileConfigured": null,
+      "allowedSubagents": [],
+      "skillsFromLastMain": [
+        "sqlserver-readonly",
+        "clickup",
+        "gog",
+        "healthcheck",
+        "openai-image-gen",
+        "openai-whisper-api",
+        "skill-creator",
+        "weather"
+      ],
+      "lastMainChannel": "whatsapp",
+      "lastMainAccountId": "default",
+      "lastMainTo": "+5219984927652",
+      "lastMainUpdatedAtMs": 1773246324571,
+      "whatsappStats": {
+        "accounts": ["default"],
+        "directCount": 2,
+        "groupCount": 0,
+        "directSample": ["+5219988961832", "+5219984927652"]
+      },
+      "puedesHacer": [],
+      "hasAgentsMd": true,
+      "hasMemoryMd": true,
+      "hasMemoryFolder": true
+    },
+    {
+      "id": "tesoreria",
+      "configuredInOpenclaw": true,
+      "identity": "Gerente Tesoreria",
+      "name": "tesoreria",
+      "workspace": "/Users/desarrollofibrax/.openclaw/workspace-tesoreria",
+      "agentDir": "/Users/desarrollofibrax/.openclaw/agents/tesoreria/agent",
+      "modelConfigured": "openai/gpt-5.1-codex",
+      "toolsProfileConfigured": null,
+      "allowedSubagents": [],
+      "skillsFromLastMain": [
+        "clickup",
+        "coding-agent",
+        "healthcheck",
+        "openai-image-gen",
+        "openai-whisper-api",
+        "skill-creator",
+        "weather"
+      ],
+      "lastMainChannel": "webchat",
+      "lastMainAccountId": null,
+      "lastMainTo": null,
+      "lastMainUpdatedAtMs": 1771707192027,
+      "whatsappStats": {
+        "accounts": [],
+        "directCount": 0,
+        "groupCount": 0,
+        "directSample": []
+      },
+      "puedesHacer": [
+        "Forecast semanal/mensual (entradas/salidas).",
+        "Priorizacion de pagos (criticos vs diferibles).",
+        "Alertas por saldo minimo y riesgos."
+      ],
+      "hasAgentsMd": true,
+      "hasMemoryMd": true,
+      "hasMemoryFolder": false
+    }
+  ],
+  "agentAccessRouter": {
+    "enabled": true,
+    "mode": "signed-links",
+    "localUrl": "http://127.0.0.1:18890",
+    "healthPath": "/healthz",
+    "issuePathTemplate": "/issue/<alias>",
+    "aliases": {
+      "sion": "agent:main:main",
+      "fibrax-mind": "agent:fibrax-mind:fibrax-mind",
+      "mujeres": "agent:mujeres-inversionistas:mujeres-inversionistas",
+      "contabilidad": "agent:contabilidad:contabilidad"
+    },
+    "dockerComposePath": "/Users/desarrollofibrax/.openclaw/workspace-sion/infra/agent-access/docker-compose.yml"
+  }
+}

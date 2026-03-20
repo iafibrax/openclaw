@@ -2,8 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestRegistry } from "../../test-utils/channel-plugins.js";
 
 const callGatewayMock = vi.fn();
+const loadConfigMock = vi.fn(() => ({}));
 vi.mock("../../gateway/call.js", () => ({
   callGateway: (opts: unknown) => callGatewayMock(opts),
+}));
+vi.mock("../../config/config.js", () => ({
+  loadConfig: () => loadConfigMock(),
 }));
 
 const loadResolveAnnounceTarget = async () => await import("./sessions-announce-target.js");
@@ -58,6 +62,8 @@ const installRegistry = async () => {
 describe("resolveAnnounceTarget", () => {
   beforeEach(async () => {
     callGatewayMock.mockReset();
+    loadConfigMock.mockReset();
+    loadConfigMock.mockReturnValue({});
     vi.resetModules();
     await installRegistry();
   });
@@ -100,5 +106,39 @@ describe("resolveAnnounceTarget", () => {
     const first = callGatewayMock.mock.calls[0]?.[0] as { method?: string } | undefined;
     expect(first).toBeDefined();
     expect(first?.method).toBe("sessions.list");
+  });
+
+  it("prefers unique bound account for agent main WhatsApp sessions", async () => {
+    const { resolveAnnounceTarget } = await loadResolveAnnounceTarget();
+    loadConfigMock.mockReturnValue({
+      bindings: [
+        {
+          agentId: "mujeres-inversionistas",
+          match: { channel: "whatsapp", accountId: "mujeres-inversionistas" },
+        },
+      ],
+    });
+    callGatewayMock.mockResolvedValueOnce({
+      sessions: [
+        {
+          key: "agent:mujeres-inversionistas:main",
+          deliveryContext: {
+            channel: "whatsapp",
+            to: "+529984927652",
+            accountId: "default",
+          },
+        },
+      ],
+    });
+
+    const target = await resolveAnnounceTarget({
+      sessionKey: "agent:mujeres-inversionistas:main",
+      displayKey: "agent:mujeres-inversionistas:main",
+    });
+    expect(target).toEqual({
+      channel: "whatsapp",
+      to: "+529984927652",
+      accountId: "mujeres-inversionistas",
+    });
   });
 });
